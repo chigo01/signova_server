@@ -9,7 +9,8 @@ export const verifyToken = (
   const token = req.cookies.auth_token;
 
   if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
+    res.status(401).json({ message: "Unauthorized" });
+    return;
   }
 
   try {
@@ -17,6 +18,7 @@ export const verifyToken = (
     (req as any).user = decoded;
     next();
   } catch (error) {
-    return res.status(403).json({ message: "Invalid token" });
+    res.status(403).json({ message: "Invalid token" });
+    return;
   }
 };

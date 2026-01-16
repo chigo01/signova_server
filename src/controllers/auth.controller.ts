@@ -52,10 +52,10 @@ export const sendOtp = async (req: Request, res: Response) => {
       console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
     }
 
-    res.status(200).json({ message: "OTP sent successfully" });
+    return res.status(200).json({ message: "OTP sent successfully" });
   } catch (error) {
     console.error("Send OTP Error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -100,13 +100,13 @@ export const verifyOtp = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Login successful",
       user: { email: user.email, name: user.name },
     });
   } catch (error) {
     console.error("Verify OTP Error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
 
