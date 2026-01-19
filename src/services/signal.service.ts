@@ -29,14 +29,11 @@ export class SignalService {
     if (!cached) return null;
 
     console.log(
-      `Using cached signals (expires at ${cached.expiresAt.toISOString()})`
+      `✅ Using cached signals (expires at ${cached.expiresAt.toISOString()})`
     );
-    return {
-      ...cached.signals,
-      cached: true,
-      cachedAt: cached.fetchedAt,
-      expiresAt: cached.expiresAt,
-    };
+
+    // Return the signals data directly (it's already the full response object)
+    return cached.signals;
   }
 
   /**
@@ -84,19 +81,25 @@ export class SignalService {
    * Fetch approved signals from admin server (with caching)
    */
   static async getApprovedSignals(): Promise<any> {
-    // Check cache first
-    const cached = await this.getCachedSignals();
-    if (cached) {
-      return cached;
+    try {
+      // Check cache first
+      const cached = await this.getCachedSignals();
+      if (cached) {
+        return cached;
+      }
+
+      // Fetch from admin server
+      console.log("📡 Fetching fresh signals from admin server...");
+      const signals = await this.fetchFromAdminServer();
+
+      // Cache the response
+      await this.cacheSignals(signals);
+
+      return signals;
+    } catch (error) {
+      console.error("❌ Error in getApprovedSignals:", error);
+      throw error;
     }
-
-    // Fetch from admin server
-    const signals = await this.fetchFromAdminServer();
-
-    // Cache the response
-    await this.cacheSignals(signals);
-
-    return signals;
   }
 
   /**

@@ -27,7 +27,6 @@ const SignalsCacheSchema = new Schema<ISignalsCache>(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
   },
   {

@@ -17,7 +17,9 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ) => {
-  console.error("Error:", err);
+  console.error("❌ Error caught by errorHandler:");
+  console.error("   Message:", err.message);
+  console.error("   Stack:", err.stack);
 
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
@@ -30,6 +32,9 @@ export const errorHandler = (
   return res.status(500).json({
     success: false,
     message: "Internal server error",
-    ...(process.env.NODE_ENV === "development" && { error: err.message }),
+    ...(process.env.NODE_ENV === "development" && { 
+      error: err.message,
+      stack: err.stack 
+    }),
   });
 };

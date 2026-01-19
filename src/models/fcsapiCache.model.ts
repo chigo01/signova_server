@@ -27,7 +27,6 @@ const FcsapiCacheSchema = new Schema<IFcsapiCache>(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
   },
   {
