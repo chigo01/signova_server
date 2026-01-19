@@ -96,7 +96,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
     res.cookie("auth_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production", // Secure in prod
-      sameSite: "strict", // Adjust based on cross-origin needs
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // "none" for cross-origin in prod
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
@@ -111,7 +111,11 @@ export const verifyOtp = async (req: Request, res: Response) => {
 };
 
 export const logout = (_req: Request, res: Response) => {
-  res.clearCookie("auth_token");
+  res.clearCookie("auth_token", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  });
   res.status(200).json({ message: "Logged out successfully" });
 };
 
