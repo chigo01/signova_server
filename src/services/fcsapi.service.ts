@@ -131,6 +131,59 @@ export class FcsapiService {
   }
 
   /**
+   * Fetch historical candle data from fcsapi
+   */
+  private static async fetchHistoricalData(
+    cleanPair: string,
+    period: string = FCSAPI_CONSTANTS.DEFAULT_PERIOD,
+    limit: number = FCSAPI_CONSTANTS.DEFAULT_CANDLES
+  ): Promise<any> {
+    if (!env.FCSAPI_KEY) {
+      throw new Error("FCSAPI_KEY is not configured");
+    }
+
+    // Calculate time range for historical data
+    const toTimestamp = Math.floor(Date.now() / 1000);
+    const fromTimestamp = toTimestamp - limit * this.getPeriodSeconds(period);
+
+    const apiUrl = `${FCSAPI_CONSTANTS.HISTORY_URL}?symbol=${cleanPair}&period=${period}&from=${fromTimestamp}&to=${toTimestamp}&access_key=${env.FCSAPI_KEY}`;
+    console.log(
+      "📊 Calling fcsapi history:",
+      apiUrl.replace(env.FCSAPI_KEY, "***")
+    );
+
+    const response = await fetch(apiUrl);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("fcsapi error:", errorText);
+      throw new Error(
+        `Failed to fetch historical data from fcsapi: ${errorText}`
+      );
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * Get period in seconds for time calculation
+   */
+  private static getPeriodSeconds(period: string): number {
+    const periodMap: Record<string, number> = {
+      "1m": 60,
+      "5m": 300,
+      "15m": 900,
+      "30m": 1800,
+      "1h": 3600,
+      "2h": 7200,
+      "4h": 14400,
+      "1d": 86400,
+      "1w": 604800,
+    };
+    return periodMap[period] || 3600; // Default to 1 hour
+  }
+
+  /**
    * Cache signal data for a pair
    */
   private static async cacheSignal(
@@ -157,13 +210,18 @@ export class FcsapiService {
   }
 
   /**
-   * Get signal data for a pair (from cache or API)
+   * Get signal data for a pair (from cache or API) - Historical Data
    */
-  static async getPairSignal(pair: string): Promise<PairSignalResponse> {
+  static async getPairSignal(
+    pair: string,
+    period: string = FCSAPI_CONSTANTS.DEFAULT_PERIOD,
+    limit: number = FCSAPI_CONSTANTS.DEFAULT_CANDLES
+  ): Promise<PairSignalResponse> {
     const normalizedPair = this.normalizePair(pair);
+    const cacheKey = `${normalizedPair}-${period}-${limit}`;
 
     // Check cache first
-    const cached = await this.getCachedSignal(normalizedPair);
+    const cached = await this.getCachedSignal(cacheKey);
     if (cached) {
       const usage = await this.getCurrentUsage();
       return {
@@ -181,9 +239,9 @@ export class FcsapiService {
       };
     }
 
-    // Fetch from API
+    // Fetch historical data from API
     const cleanPair = pair.toUpperCase().replace(/[^A-Z]/g, "");
-    const signals = await this.fetchFromApi(cleanPair);
+    const signals = await this.fetchHistoricalData(cleanPair, period, limit);
 
     // Increment usage counter
     const usage = await this.incrementUsage();
@@ -195,11 +253,8 @@ export class FcsapiService {
       );
     }
 
-    // Cache the response
-    const { fetchedAt, expiresAt } = await this.cacheSignal(
-      normalizedPair,
-      signals
-    );
+    // Cache the response with the specific cache key
+    const { fetchedAt, expiresAt } = await this.cacheSignal(cacheKey, signals);
 
     return {
       success: true,

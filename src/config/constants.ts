@@ -7,9 +7,12 @@ export const AUTH_CONSTANTS = {
 
 export const FCSAPI_CONSTANTS = {
   BASE_URL: "https://api-v4.fcsapi.com/forex/latest",
+  HISTORY_URL: "https://api-v4.fcsapi.com/forex/history",
   CACHE_TTL_MINUTES: 15,
   MONTHLY_LIMIT: 500,
   WARNING_THRESHOLD: 450,
+  DEFAULT_CANDLES: 100, // Number of historical candles to fetch
+  DEFAULT_PERIOD: "1h", // Default timeframe
   CORE_PAIRS: [
     "EURUSD",
     "GBPUSD",
