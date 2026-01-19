@@ -116,7 +116,7 @@ export class FcsapiService {
       throw new Error("FCSAPI_KEY is not configured");
     }
 
-    const apiUrl = `${FCSAPI_CONSTANTS.BASE_URL}?symbol=${cleanPair}&access_key=${env.FCSAPI_KEY}`;
+    const apiUrl = `${FCSAPI_CONSTANTS.BASE_URL}?symbol=${cleanPair}&period=1w&access_key=${env.FCSAPI_KEY}`;
     console.log("Calling fcsapi:", apiUrl.replace(env.FCSAPI_KEY, "***"));
 
     const response = await fetch(apiUrl);
