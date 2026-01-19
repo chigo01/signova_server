@@ -1,24 +1,30 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import { AuthService } from "../services/auth.service";
+import { COOKIE_NAME } from "../config/cookie";
+import { AppError } from "./errorHandler";
 
 export const verifyToken = (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
-  const token = req.cookies.auth_token;
-
-  if (!token) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
-
+): void => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "dev_secret");
-    (req as any).user = decoded;
+    const token = req.cookies[COOKIE_NAME];
+
+    if (!token) {
+      res.status(401).json({ message: "Unauthorized - No token provided" });
+      return;
+    }
+
+    const decoded = AuthService.verifyToken(token);
+    req.user = decoded;
     next();
   } catch (error) {
-    res.status(403).json({ message: "Invalid token" });
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+    res.status(403).json({ message: "Invalid or expired token" });
     return;
   }
 };

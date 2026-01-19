@@ -7,11 +7,12 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import connectDB from "./config/db";
+import { env } from "./config/env";
 import authRoutes from "./routes/auth.routes";
 import signalsRoutes from "./routes/signals.routes";
+import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
-const port = process.env.PORT || 3001;
 
 // Connect Database
 connectDB();
@@ -19,7 +20,7 @@ connectDB();
 // Middleware
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: env.FRONTEND_URL,
     credentials: true,
   })
 );
@@ -41,7 +42,10 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Error handling middleware (must be last)
+app.use(errorHandler);
+
 // Start server
-app.listen(port, () => {
-  console.log(`🚀 Server running at http://localhost:${port}`);
+app.listen(env.PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${env.PORT}`);
 });
