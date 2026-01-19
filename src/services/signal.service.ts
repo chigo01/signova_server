@@ -1,6 +1,7 @@
 import SignalPlay from "../models/signalPlay.model";
+import SignalsCache from "../models/signalsCache.model";
 import { env } from "../config/env";
-import { PAGINATION_CONSTANTS } from "../config/constants";
+import { PAGINATION_CONSTANTS, SIGNALS_CONSTANTS } from "../config/constants";
 
 export interface PlaySignalData {
   userId: any;
@@ -12,20 +13,90 @@ export interface PlaySignalData {
   stopLoss?: number;
 }
 
+const SIGNALS_CACHE_KEY = "approved-signals";
+
 export class SignalService {
   /**
-   * Fetch approved signals from admin server
+   * Get cached signals if available and not expired
    */
-  static async getApprovedSignals(): Promise<any> {
+  private static async getCachedSignals(): Promise<any | null> {
+    const now = new Date();
+    const cached = await SignalsCache.findOne({
+      cacheKey: SIGNALS_CACHE_KEY,
+      expiresAt: { $gt: now },
+    });
+
+    if (!cached) return null;
+
+    console.log(
+      `Using cached signals (expires at ${cached.expiresAt.toISOString()})`
+    );
+    return {
+      ...cached.signals,
+      cached: true,
+      cachedAt: cached.fetchedAt,
+      expiresAt: cached.expiresAt,
+    };
+  }
+
+  /**
+   * Fetch fresh signals from admin server
+   */
+  private static async fetchFromAdminServer(): Promise<any> {
+    console.log("Fetching fresh signals from admin server...");
     const response = await fetch(`${env.ADMIN_SERVER_URL}/approved-signals`);
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Admin server error:", errorText);
-      throw new Error(`Failed to fetch signals from admin server: ${errorText}`);
+      throw new Error(
+        `Failed to fetch signals from admin server: ${errorText}`
+      );
     }
 
     return await response.json();
+  }
+
+  /**
+   * Cache signals data
+   */
+  private static async cacheSignals(signals: any): Promise<void> {
+    const fetchedAt = new Date();
+    const expiresAt = new Date(
+      fetchedAt.getTime() + SIGNALS_CONSTANTS.CACHE_TTL_MINUTES * 60 * 1000
+    );
+
+    await SignalsCache.findOneAndUpdate(
+      { cacheKey: SIGNALS_CACHE_KEY },
+      {
+        cacheKey: SIGNALS_CACHE_KEY,
+        signals,
+        fetchedAt,
+        expiresAt,
+      },
+      { upsert: true, new: true }
+    );
+
+    console.log(`Signals cached until ${expiresAt.toISOString()}`);
+  }
+
+  /**
+   * Fetch approved signals from admin server (with caching)
+   */
+  static async getApprovedSignals(): Promise<any> {
+    // Check cache first
+    const cached = await this.getCachedSignals();
+    if (cached) {
+      return cached;
+    }
+
+    // Fetch from admin server
+    const signals = await this.fetchFromAdminServer();
+
+    // Cache the response
+    await this.cacheSignals(signals);
+
+    return signals;
   }
 
   /**
@@ -50,11 +121,7 @@ export class SignalService {
   /**
    * Get signal history for a user with pagination
    */
-  static async getSignalHistory(
-    userId: any,
-    page?: number,
-    limit?: number
-  ) {
+  static async getSignalHistory(userId: any, page?: number, limit?: number) {
     const currentPage = page || PAGINATION_CONSTANTS.DEFAULT_PAGE;
     const currentLimit = limit || PAGINATION_CONSTANTS.DEFAULT_LIMIT;
     const skip = (currentPage - 1) * currentLimit;

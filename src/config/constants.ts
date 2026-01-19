@@ -31,6 +31,10 @@ export const FCSAPI_CONSTANTS = {
   ],
 } as const;
 
+export const SIGNALS_CONSTANTS = {
+  CACHE_TTL_MINUTES: 5, // Cache approved signals for 5 minutes
+} as const;
+
 export const PAGINATION_CONSTANTS = {
   DEFAULT_PAGE: 1,
   DEFAULT_LIMIT: 20,
