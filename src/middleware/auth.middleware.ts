@@ -9,7 +9,16 @@ export const verifyToken = (
   next: NextFunction
 ): void => {
   try {
-    const token = req.cookies[COOKIE_NAME];
+    // Check Authorization header first (Bearer token)
+    let token: string | undefined;
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7);
+    } else {
+      // Fallback to cookie for backwards compatibility
+      token = req.cookies[COOKIE_NAME];
+    }
 
     if (!token) {
       res.status(401).json({ message: "Unauthorized - No token provided" });

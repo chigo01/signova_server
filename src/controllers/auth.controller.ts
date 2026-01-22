@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { AuthService } from "../services/auth.service";
-import { getCookieOptions, COOKIE_NAME } from "../config/cookie";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
 
@@ -32,17 +31,16 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
   // Generate JWT
   const token = AuthService.generateToken(user._id, user.email);
 
-  // Set HTTP-only cookie
-  res.cookie(COOKIE_NAME, token, getCookieOptions());
-
+  // Return token in response body - webapp will save it in a cookie
   res.status(200).json({
     message: "Login successful",
+    token,
     user: { email: user.email, name: user.name },
   });
 });
 
 export const logout = (_req: Request, res: Response) => {
-  res.clearCookie(COOKIE_NAME, getCookieOptions());
+  // Cookie is now managed client-side, just return success
   res.status(200).json({ message: "Logged out successfully" });
 };
 
