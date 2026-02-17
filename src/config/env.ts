@@ -7,6 +7,7 @@ interface EnvConfig {
   ADMIN_SERVER_URL: string;
   RESEND_API_KEY?: string;
   FCSAPI_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
 }
 
 function validateEnv(): EnvConfig {
@@ -29,6 +30,7 @@ function validateEnv(): EnvConfig {
       process.env.ADMIN_SERVER_URL || "http://localhost:8000",
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     FCSAPI_KEY: process.env.FCSAPI_KEY,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   };
 }
 

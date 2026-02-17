@@ -39,6 +39,31 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+export const googleLogin = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { access_token } = req.body;
+
+    if (!access_token) {
+      throw new AppError(400, "Google access token is required");
+    }
+
+    const googleUser = await AuthService.verifyGoogleToken(access_token);
+    const user = await AuthService.findOrCreateGoogleUser(
+      googleUser.email,
+      googleUser.name,
+      googleUser.googleId
+    );
+
+    const token = AuthService.generateToken(user._id, user.email);
+
+    res.status(200).json({
+      message: "Login successful",
+      token,
+      user: { email: user.email, name: user.name },
+    });
+  }
+);
+
 export const logout = (_req: Request, res: Response) => {
   // Cookie is now managed client-side, just return success
   res.status(200).json({ message: "Logged out successfully" });

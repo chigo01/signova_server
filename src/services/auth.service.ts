@@ -97,6 +97,53 @@ export class AuthService {
   }
 
   /**
+   * Verify Google access token via Google's userinfo endpoint
+   */
+  static async verifyGoogleToken(
+    accessToken: string
+  ): Promise<{ email: string; name: string; googleId: string }> {
+    const res = await fetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!res.ok) {
+      throw new Error("Invalid Google token");
+    }
+
+    const payload = await res.json();
+
+    return {
+      email: payload.email,
+      name: payload.name || payload.email.split("@")[0],
+      googleId: payload.sub,
+    };
+  }
+
+  /**
+   * Find or create a user from Google login (links by email)
+   */
+  static async findOrCreateGoogleUser(
+    email: string,
+    name: string,
+    googleId: string
+  ): Promise<{ _id: any; email: string; name?: string }> {
+    let user = await User.findOne({ email });
+
+    if (user) {
+      if (!user.googleId) {
+        user.googleId = googleId;
+        if (!user.name && name) user.name = name;
+        await user.save();
+      }
+    } else {
+      user = await new User({ email, name, googleId }).save();
+    }
+
+    return { _id: user._id, email: user.email, name: user.name };
+  }
+
+  /**
    * Generate JWT token for authenticated user
    */
   static generateToken(userId: any, email: string): string {
