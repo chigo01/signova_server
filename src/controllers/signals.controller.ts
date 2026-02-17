@@ -6,8 +6,9 @@ import { AppError } from "../middleware/errorHandler";
 export const getApprovedSignals = asyncHandler(
   async (_req: Request, res: Response) => {
     const data = await SignalService.getApprovedSignals();
+    console.log("data", data);
     res.status(200).json(data);
-  }
+  },
 );
 
 export const playSignal = asyncHandler(async (req: Request, res: Response) => {
@@ -18,7 +19,7 @@ export const playSignal = asyncHandler(async (req: Request, res: Response) => {
   if (!signalId || !symbol || !signalType || !entryPrice) {
     throw new AppError(
       400,
-      "Missing required fields: signalId, symbol, signalType, entryPrice"
+      "Missing required fields: signalId, symbol, signalType, entryPrice",
     );
   }
 
@@ -46,5 +47,5 @@ export const getSignalHistory = asyncHandler(
 
     const result = await SignalService.getSignalHistory(userId, page, limit);
     res.status(200).json(result);
-  }
+  },
 );

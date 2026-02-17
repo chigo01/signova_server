@@ -29,7 +29,7 @@ export class SignalService {
     if (!cached) return null;
 
     console.log(
-      `✅ Using cached signals (expires at ${cached.expiresAt.toISOString()})`
+      `✅ Using cached signals (expires at ${cached.expiresAt.toISOString()})`,
     );
 
     // Return the signals data directly (it's already the full response object)
@@ -47,7 +47,7 @@ export class SignalService {
       const errorText = await response.text();
       console.error("Admin server error:", errorText);
       throw new Error(
-        `Failed to fetch signals from admin server: ${errorText}`
+        `Failed to fetch signals from admin server: ${errorText}`,
       );
     }
 
@@ -60,7 +60,7 @@ export class SignalService {
   private static async cacheSignals(signals: any): Promise<void> {
     const fetchedAt = new Date();
     const expiresAt = new Date(
-      fetchedAt.getTime() + SIGNALS_CONSTANTS.CACHE_TTL_MINUTES * 60 * 1000
+      fetchedAt.getTime() + SIGNALS_CONSTANTS.CACHE_TTL_MINUTES * 60 * 1000,
     );
 
     await SignalsCache.findOneAndUpdate(
@@ -71,7 +71,7 @@ export class SignalService {
         fetchedAt,
         expiresAt,
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     );
 
     console.log(`Signals cached until ${expiresAt.toISOString()}`);
@@ -82,12 +82,6 @@ export class SignalService {
    */
   static async getApprovedSignals(): Promise<any> {
     try {
-      // Check cache first
-      const cached = await this.getCachedSignals();
-      if (cached) {
-        return cached;
-      }
-
       // Fetch from admin server
       console.log("📡 Fetching fresh signals from admin server...");
       const signals = await this.fetchFromAdminServer();
