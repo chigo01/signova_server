@@ -42,3 +42,20 @@ export const PAGINATION_CONSTANTS = {
   DEFAULT_PAGE: 1,
   DEFAULT_LIMIT: 20,
 } as const;
+
+export const STOCKS_CONSTANTS = {
+  WATCHLIST: [
+    "AAPL","MSFT","NVDA","TSLA","META","AMZN","GOOGL","NFLX",
+    "AMD","PLTR","COIN","SQ","UBER","PYPL","SNOW","CRM","SPY","QQQ","HOOD","SOFI"
+  ],
+  TOP_MOVERS_COUNT: 5,
+  CACHE_TTL_MINUTES: {
+    QUOTE: 15,
+    TECHNICALS: 60,
+    PROFILE: 10080,
+    TOP_MOVERS: 1440,
+    GPT_REC: 60,
+  },
+  FINNHUB_CONCURRENCY: 20,
+} as const;
+// AV daily usage: 1 call/day (25 call limit → 24 buffer)
