@@ -6,6 +6,8 @@ export interface IUser extends Document {
   googleId?: string;
   otp?: string;
   otpExpiry?: Date;
+  plan: 'free' | 'pro';
+  proPlanExpiry?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,6 +19,8 @@ const UserSchema: Schema = new Schema(
     googleId: { type: String, sparse: true },
     otp: { type: String },
     otpExpiry: { type: Date },
+    plan: { type: String, enum: ['free', 'pro'], default: 'free' },
+    proPlanExpiry: { type: Date },
   },
   { timestamps: true }
 );

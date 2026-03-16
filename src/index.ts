@@ -12,6 +12,7 @@ import authRoutes from "./routes/auth.routes";
 import signalsRoutes from "./routes/signals.routes";
 import youtubeRoutes from "./routes/youtube.routes";
 import stocksRoutes from "./routes/stocks.routes";
+import paymentsRoutes from "./routes/payments.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -37,6 +38,7 @@ app.use("/auth", authRoutes);
 app.use("/signals", signalsRoutes);
 app.use("/youtube", youtubeRoutes);
 app.use("/stocks", stocksRoutes);
+app.use("/payments", paymentsRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({ message: "Welcome to the Signova API!" });

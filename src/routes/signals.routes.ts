@@ -7,7 +7,7 @@ import {
 import { getPairSignal, getUsageStats } from "../controllers/fcsapi.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 
-const router = Router();
+const router: Router = Router();
 
 router.get("/approved", verifyToken, getApprovedSignals);
 router.post("/play", verifyToken, playSignal);

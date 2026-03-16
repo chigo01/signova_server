@@ -8,7 +8,7 @@ import {
 } from "../controllers/auth.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 
-const router = Router();
+const router: Router = Router();
 
 router.post("/send-otp", sendOtp);
 router.post("/verify-otp", verifyOtp);

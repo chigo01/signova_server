@@ -11,6 +11,7 @@ interface EnvConfig {
   FINNHUB_API_KEY?: string;
   ALPHAVANTAGE_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  AELLA_SECRET_KEY?: string;
 }
 
 function validateEnv(): EnvConfig {
@@ -23,10 +24,10 @@ function validateEnv(): EnvConfig {
     );
   }
 
-  const optionalWarn = ["FINNHUB_API_KEY", "ALPHAVANTAGE_API_KEY", "OPENAI_API_KEY"];
+  const optionalWarn = ["FINNHUB_API_KEY", "ALPHAVANTAGE_API_KEY", "OPENAI_API_KEY", "AELLA_SECRET_KEY"];
   optionalWarn.forEach((key) => {
     if (!process.env[key]) {
-      console.warn(`⚠️  Optional env var ${key} not set — stocks feature will degrade gracefully.`);
+      console.warn(`⚠️  Optional env var ${key} not set — some features will degrade gracefully.`);
     }
   });
 
@@ -44,6 +45,7 @@ function validateEnv(): EnvConfig {
     FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     ALPHAVANTAGE_API_KEY: process.env.ALPHAVANTAGE_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    AELLA_SECRET_KEY: process.env.AELLA_SECRET_KEY,
   };
 }
 
