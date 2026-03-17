@@ -4,6 +4,7 @@ interface EnvConfig {
   MONGO_URI: string;
   JWT_SECRET: string;
   FRONTEND_URL: string;
+  FRONTEND_URLS: string[];
   ADMIN_SERVER_URL: string;
   RESEND_API_KEY?: string;
   FCSAPI_KEY?: string;
@@ -37,6 +38,10 @@ function validateEnv(): EnvConfig {
     MONGO_URI: process.env.MONGO_URI!,
     JWT_SECRET: process.env.JWT_SECRET!,
     FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:3000",
+    FRONTEND_URLS: (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || "http://localhost:3000")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     ADMIN_SERVER_URL:
       process.env.ADMIN_SERVER_URL || "http://localhost:8000",
     RESEND_API_KEY: process.env.RESEND_API_KEY,

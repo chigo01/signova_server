@@ -23,7 +23,14 @@ connectDB();
 // Middleware
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin: (origin, callback) => {
+      // Allow non-browser clients (no Origin header)
+      if (!origin) return callback(null, true);
+
+      if (env.FRONTEND_URLS.includes(origin)) return callback(null, true);
+
+      return callback(new Error(`CORS blocked origin: ${origin}`));
+    },
     credentials: true,
   })
 );
