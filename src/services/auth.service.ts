@@ -7,6 +7,14 @@ import { AUTH_CONSTANTS } from "../config/constants";
 const resend = new Resend(env.RESEND_API_KEY);
 
 export class AuthService {
+  private static isTestOtpEmail(normalizedEmail: string): boolean {
+    return (
+      env.testOtpBypassEnabled &&
+      normalizedEmail === env.testOtpEmail &&
+      !!env.testOtpCode
+    );
+  }
+
   /**
    * Generate a 6-digit OTP
    */
@@ -20,15 +28,18 @@ export class AuthService {
    * Send OTP to user's email and save to database
    */
   static async sendOTP(email: string, name?: string): Promise<void> {
-    const otp = this.generateOTP();
+    const normalized = email.trim().toLowerCase();
+    const testBypass = this.isTestOtpEmail(normalized);
+    const lookupEmail = testBypass ? normalized : email.trim();
+    const otp = testBypass ? env.testOtpCode! : this.generateOTP();
     const otpExpiry = new Date(
       Date.now() + AUTH_CONSTANTS.OTP_EXPIRY_MINUTES * 60 * 1000
     );
 
     // Find or create user and update OTP
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ email: lookupEmail });
     if (!user) {
-      user = new User({ email, name, otp, otpExpiry });
+      user = new User({ email: lookupEmail, name, otp, otpExpiry });
     } else {
       user.otp = otp;
       user.otpExpiry = otpExpiry;
@@ -36,8 +47,12 @@ export class AuthService {
     }
     await user.save();
 
-    // Send email via Resend
-    await this.sendOTPEmail(email, otp);
+    if (testBypass) {
+      console.log(`[TEST OTP] Fixed OTP for ${lookupEmail} (email not sent)`);
+      return;
+    }
+
+    await this.sendOTPEmail(lookupEmail, otp);
   }
 
   /**
@@ -73,18 +88,36 @@ export class AuthService {
     email: string,
     otp: string
   ): Promise<{ _id: any; email: string; name?: string } | null> {
+    const normalized = email.trim().toLowerCase();
+    const otpNorm = String(otp ?? "").trim();
+    if (this.isTestOtpEmail(normalized) && otpNorm === env.testOtpCode) {
+      let user = await User.findOne({ email: normalized });
+      if (!user) {
+        user = await new User({ email: normalized }).save();
+      } else {
+        user.otp = undefined;
+        user.otpExpiry = undefined;
+        await user.save();
+      }
+
+      return {
+        _id: user._id,
+        email: user.email,
+        name: user.name,
+      };
+    }
+
     const user = await User.findOne({ email });
 
     if (
       !user ||
-      user.otp !== otp ||
+      user.otp !== otpNorm ||
       !user.otpExpiry ||
       user.otpExpiry < new Date()
     ) {
       return null;
     }
 
-    // Clear OTP after successful verify
     user.otp = undefined;
     user.otpExpiry = undefined;
     await user.save();
