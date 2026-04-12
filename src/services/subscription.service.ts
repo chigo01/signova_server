@@ -1,0 +1,25 @@
+import User from "../models/user.model";
+
+export const PRO_PLAN_AMOUNT_USD = 100;
+export const PRO_PLAN_AMOUNT_USD_MICRO = PRO_PLAN_AMOUNT_USD * 1_000_000;
+export const PRO_PLAN_DURATION_DAYS = 30;
+
+export class SubscriptionService {
+  static async activateOrExtendPro(userId: string): Promise<void> {
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const baseDate =
+      user.proPlanExpiry && user.proPlanExpiry.getTime() > Date.now()
+        ? new Date(user.proPlanExpiry)
+        : new Date();
+
+    baseDate.setDate(baseDate.getDate() + PRO_PLAN_DURATION_DAYS);
+
+    user.plan = "pro";
+    user.proPlanExpiry = baseDate;
+    await user.save();
+  }
+}

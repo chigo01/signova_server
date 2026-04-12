@@ -8,6 +8,7 @@ export interface IUser extends Document {
   otpExpiry?: Date;
   plan: 'free' | 'pro';
   proPlanExpiry?: Date;
+  balanceUsdMicro: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +22,7 @@ const UserSchema: Schema = new Schema(
     otpExpiry: { type: Date },
     plan: { type: String, enum: ['free', 'pro'], default: 'free' },
     proPlanExpiry: { type: Date },
+    balanceUsdMicro: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

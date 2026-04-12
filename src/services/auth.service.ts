@@ -87,7 +87,14 @@ export class AuthService {
   static async verifyOTP(
     email: string,
     otp: string
-  ): Promise<{ _id: any; email: string; name?: string } | null> {
+  ): Promise<{
+    _id: any;
+    email: string;
+    name?: string;
+    plan: "free" | "pro";
+    proPlanExpiry?: Date;
+    balanceUsdMicro: number;
+  } | null> {
     const normalized = email.trim().toLowerCase();
     const otpNorm = String(otp ?? "").trim();
     if (this.isTestOtpEmail(normalized) && otpNorm === env.testOtpCode) {
@@ -104,6 +111,9 @@ export class AuthService {
         _id: user._id,
         email: user.email,
         name: user.name,
+        plan: user.plan,
+        proPlanExpiry: user.proPlanExpiry,
+        balanceUsdMicro: user.balanceUsdMicro,
       };
     }
 
@@ -126,6 +136,9 @@ export class AuthService {
       _id: user._id,
       email: user.email,
       name: user.name,
+      plan: user.plan,
+      proPlanExpiry: user.proPlanExpiry,
+      balanceUsdMicro: user.balanceUsdMicro,
     };
   }
 
@@ -160,7 +173,14 @@ export class AuthService {
     email: string,
     name: string,
     googleId: string
-  ): Promise<{ _id: any; email: string; name?: string }> {
+  ): Promise<{
+    _id: any;
+    email: string;
+    name?: string;
+    plan: "free" | "pro";
+    proPlanExpiry?: Date;
+    balanceUsdMicro: number;
+  }> {
     let user = await User.findOne({ email });
 
     if (user) {
@@ -173,7 +193,14 @@ export class AuthService {
       user = await new User({ email, name, googleId }).save();
     }
 
-    return { _id: user._id, email: user.email, name: user.name };
+    return {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      plan: user.plan,
+      proPlanExpiry: user.proPlanExpiry,
+      balanceUsdMicro: user.balanceUsdMicro,
+    };
   }
 
   /**

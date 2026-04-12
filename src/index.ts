@@ -13,6 +13,7 @@ import signalsRoutes from "./routes/signals.routes";
 import youtubeRoutes from "./routes/youtube.routes";
 import stocksRoutes from "./routes/stocks.routes";
 import paymentsRoutes from "./routes/payments.routes";
+import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -57,6 +58,8 @@ app.get("/health", (_req: Request, res: Response) => {
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
+
+DextopusDepositSyncService.start();
 
 // Start server
 app.listen(env.PORT, () => {
