@@ -41,11 +41,21 @@ export const playSignal = asyncHandler(async (req: Request, res: Response) => {
 
 export const getSignalHistory = asyncHandler(
   async (req: Request, res: Response) => {
-    const userId = req.user?.userId;
-    const page = parseInt(req.query.page as string);
-    const limit = parseInt(req.query.limit as string);
+    const pageRaw = Number.parseInt(String(req.query.page ?? ""), 10);
+    const limitRaw = Number.parseInt(String(req.query.limit ?? ""), 10);
+    const page =
+      Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : undefined;
+    const limit =
+      Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
 
-    const result = await SignalService.getSignalHistory(userId, page, limit);
+    const result = await SignalService.getSignalHistory(page, limit);
     res.status(200).json(result);
+  },
+);
+
+export const getApprovedSignalsWinRate = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const stats = await SignalService.getApprovedSignalsWinRate();
+    res.status(200).json({ success: true, ...stats });
   },
 );
