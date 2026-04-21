@@ -55,7 +55,9 @@ export const STOCKS_CONSTANTS = {
     PROFILE: 10080,
     TOP_MOVERS: 1440,
     GPT_REC: 60,
+    NEWS: 720, // 12 hours
   },
   FINNHUB_CONCURRENCY: 20,
+  NEWS_DAYS_BACK: 7, // Fetch news from last 7 days
 } as const;
 // AV daily usage: 1 call/day (25 call limit → 24 buffer)
