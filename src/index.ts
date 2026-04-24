@@ -13,6 +13,8 @@ import signalsRoutes from "./routes/signals.routes";
 import youtubeRoutes from "./routes/youtube.routes";
 import stocksRoutes from "./routes/stocks.routes";
 import paymentsRoutes from "./routes/payments.routes";
+import tvRoutes from "./routes/tv.routes";
+import analysisRoutes from "./routes/analysis.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -47,6 +49,8 @@ app.use("/signals", signalsRoutes);
 app.use("/youtube", youtubeRoutes);
 app.use("/stocks", stocksRoutes);
 app.use("/payments", paymentsRoutes);
+app.use("/tv", tvRoutes);
+app.use("/analysis", analysisRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({ message: "Welcome to the Signova API!" });

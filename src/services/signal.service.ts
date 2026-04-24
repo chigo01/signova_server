@@ -85,6 +85,11 @@ export class SignalService {
    */
   static async getApprovedSignals(): Promise<any> {
     try {
+      const cachedSignals = await this.getCachedSignals();
+      if (cachedSignals) {
+        return cachedSignals;
+      }
+
       // Fetch from admin server
       console.log("📡 Fetching fresh signals from admin server...");
       const signals = await this.fetchFromAdminServer();

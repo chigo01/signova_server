@@ -22,6 +22,12 @@ export interface PairSignalResponse {
   signals: any;
 }
 
+export interface HistoricalQueryOptions {
+  from?: number;
+  to?: number;
+  limit?: number;
+}
+
 export class FcsapiService {
   /**
    * Normalize pair format: "EURUSD" -> "EUR/USD"
@@ -136,15 +142,17 @@ export class FcsapiService {
   private static async fetchHistoricalData(
     cleanPair: string,
     period: string = FCSAPI_CONSTANTS.DEFAULT_PERIOD,
-    limit: number = FCSAPI_CONSTANTS.DEFAULT_CANDLES
+    options: HistoricalQueryOptions = {}
   ): Promise<any> {
     if (!env.FCSAPI_KEY) {
       throw new Error("FCSAPI_KEY is not configured");
     }
 
-    // Calculate time range for historical data
-    const toTimestamp = Math.floor(Date.now() / 1000);
-    const fromTimestamp = toTimestamp - limit * this.getPeriodSeconds(period);
+    const toTimestamp = options.to ?? Math.floor(Date.now() / 1000);
+    const effectiveLimit = options.limit ?? FCSAPI_CONSTANTS.DEFAULT_CANDLES;
+    const fromTimestamp =
+      options.from ??
+      Math.max(0, toTimestamp - effectiveLimit * this.getPeriodSeconds(period));
 
     const apiUrl = `${FCSAPI_CONSTANTS.HISTORY_URL}?symbol=${cleanPair}&period=${period}&from=${fromTimestamp}&to=${toTimestamp}&access_key=${env.FCSAPI_KEY}`;
     console.log(
@@ -212,13 +220,19 @@ export class FcsapiService {
   /**
    * Get signal data for a pair (from cache or API) - Historical Data
    */
-  static async getPairSignal(
+  static async getHistoricalCandles(
     pair: string,
     period: string = FCSAPI_CONSTANTS.DEFAULT_PERIOD,
-    limit: number = FCSAPI_CONSTANTS.DEFAULT_CANDLES
+    options: HistoricalQueryOptions = {}
   ): Promise<PairSignalResponse> {
     const normalizedPair = this.normalizePair(pair);
-    const cacheKey = `${normalizedPair}-${period}-${limit}`;
+    const cacheKey = [
+      normalizedPair,
+      period,
+      options.from ?? "auto",
+      options.to ?? "auto",
+      options.limit ?? FCSAPI_CONSTANTS.DEFAULT_CANDLES,
+    ].join("-");
 
     // Check cache first
     const cached = await this.getCachedSignal(cacheKey);
@@ -241,7 +255,7 @@ export class FcsapiService {
 
     // Fetch historical data from API
     const cleanPair = pair.toUpperCase().replace(/[^A-Z]/g, "");
-    const signals = await this.fetchHistoricalData(cleanPair, period, limit);
+    const signals = await this.fetchHistoricalData(cleanPair, period, options);
 
     // Increment usage counter
     const usage = await this.incrementUsage();
@@ -269,6 +283,14 @@ export class FcsapiService {
       },
       signals,
     };
+  }
+
+  static async getPairSignal(
+    pair: string,
+    period: string = FCSAPI_CONSTANTS.DEFAULT_PERIOD,
+    limit: number = FCSAPI_CONSTANTS.DEFAULT_CANDLES
+  ): Promise<PairSignalResponse> {
+    return this.getHistoricalCandles(pair, period, { limit });
   }
 
   /**
