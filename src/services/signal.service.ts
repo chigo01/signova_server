@@ -194,7 +194,7 @@ export class SignalService {
   }
 
   /**
-   * Win rate from full approved history: TP_HIT count / total approved signals (%).
+   * Win rate from full approved history: final take-profit outcomes / total approved signals (%).
    */
   static async getApprovedSignalsWinRate(): Promise<{
     winRate: number;
@@ -214,7 +214,10 @@ export class SignalService {
       const items: any[] = Array.isArray(data?.items) ? data.items : [];
       for (const item of items) {
         totalSignals += 1;
-        if (item?.signal?.tradeOutcome === "TP_HIT") {
+        if (
+          item?.signal?.tradeOutcome === "TP_HIT" ||
+          item?.signal?.tradeOutcome === "TP2_HIT"
+        ) {
           takeProfitHits += 1;
         }
       }
