@@ -13,7 +13,7 @@ export interface PlaySignalData {
   stopLoss?: number;
 }
 
-const SIGNALS_CACHE_KEY = "approved-signals";
+const SIGNALS_CACHE_KEY = "elite-signals-v2";
 
 /** Page size when scanning full approved history (e.g. win rate). */
 const APPROVED_HISTORY_AGG_PAGE_SIZE = 100000000;
@@ -43,15 +43,23 @@ export class SignalService {
    * Fetch fresh signals from admin server
    */
   private static async fetchFromAdminServer(): Promise<any> {
-    console.log("Fetching fresh signals from admin server...");
-    const response = await fetch(`${env.ADMIN_SERVER_URL}/approved-signals`);
+    console.log("Fetching fresh elite signals from admin server...");
+    const response = await fetch(`${env.ADMIN_SERVER_URL}/signals/elite`);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Admin server error:", errorText);
-      throw new Error(
-        `Failed to fetch signals from admin server: ${errorText}`,
-      );
+      const eliteErrorText = await response.text();
+      console.warn("Admin elite endpoint unavailable, falling back:", eliteErrorText);
+      const fallbackResponse = await fetch(`${env.ADMIN_SERVER_URL}/approved-signals`);
+
+      if (!fallbackResponse.ok) {
+        const errorText = await fallbackResponse.text();
+        console.error("Admin server error:", errorText);
+        throw new Error(
+          `Failed to fetch signals from admin server: ${errorText}`,
+        );
+      }
+
+      return await fallbackResponse.json();
     }
 
     return await response.json();
@@ -80,6 +88,14 @@ export class SignalService {
     console.log(`Signals cached until ${expiresAt.toISOString()}`);
   }
 
+  private static shouldCacheSignals(signals: any): boolean {
+    const approvedCount = Array.isArray(signals?.signals)
+      ? signals.signals.length
+      : Number(signals?.count) || 0;
+
+    return approvedCount > 0;
+  }
+
   /**
    * Fetch approved signals from admin server (with caching)
    */
@@ -95,7 +111,9 @@ export class SignalService {
       const signals = await this.fetchFromAdminServer();
 
       // Cache the response
-      await this.cacheSignals(signals);
+      if (this.shouldCacheSignals(signals)) {
+        await this.cacheSignals(signals);
+      }
 
       return signals;
     } catch (error) {
