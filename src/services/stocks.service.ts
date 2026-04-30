@@ -5,6 +5,7 @@ import { AlphaVantageService } from "./alphaVantage.service";
 import StocksCache from "../models/stocksCache.model";
 import { env } from "../config/env";
 import { STOCKS_CONSTANTS } from "../config/constants";
+import { PredictionService } from "./prediction.service";
 
 export interface StockRecommendation {
   symbol: string;
@@ -200,6 +201,9 @@ Technical aggregate (${trending ? "trending" : "ranging"} market, ADX ${adx}):
   ${count.buy} buy / ${count.neutral} neutral / ${count.sell} sell signals → overall: ${signal}
 Market cap: $${marketCap}M`;
 
+      const technicalSummary = `${symbol} analysis: ${trending ? "Trending" : "Ranging"}, ADX ${adx}, Signals: ${signal} (${count.buy}B/${count.neutral}N/${count.sell}S).`;
+      const historicalContext = await PredictionService.getHistoricalContext(symbol, technicalSummary);
+
       const completion = await this.openai.chat.completions.create({
         model: "gpt-4.1-mini",
         response_format: { type: "json_object" },
@@ -207,9 +211,9 @@ Market cap: $${marketCap}M`;
           {
             role: "system",
             content:
-              'You are a professional stock analyst. Analyze the data and return ONLY valid JSON with keys: recommendation ("BUY"|"HOLD"|"SELL"), confidence (integer 0–100), reasons (array of 2–3 concise specific strings). No markdown.',
+              'You are a professional stock analyst with access to your own historical analysis memory. Analyze the current data and consider the provided "Historical Analysis Memory" (if any) to ensure consistency or learn from past patterns. Return ONLY valid JSON with keys: recommendation ("BUY"|"HOLD"|"SELL"), confidence (integer 0–100), reasons (array of 2–3 concise specific strings). No markdown.',
           },
-          { role: "user", content: userPrompt },
+          { role: "user", content: userPrompt + historicalContext },
         ],
       });
 
@@ -217,6 +221,15 @@ Market cap: $${marketCap}M`;
       if (!content) return FALLBACK_REC;
 
       const parsed = JSON.parse(content) as GPTRec;
+
+      // Save the new prediction to historical memory (non-blocking)
+      PredictionService.savePrediction({
+        symbol,
+        technicalState: technicalSummary,
+        recommendation: parsed.recommendation,
+        confidence: parsed.confidence,
+        reasons: parsed.reasons,
+      }).catch(err => console.error("Error saving prediction memory:", err));
 
       const expiresAt = new Date(
         Date.now() + STOCKS_CONSTANTS.CACHE_TTL_MINUTES.GPT_REC * 60 * 1000
