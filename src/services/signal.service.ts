@@ -31,6 +31,11 @@ export class SignalService {
 
     if (!cached) return null;
 
+    if (!this.shouldCacheSignals(cached.signals)) {
+      await SignalsCache.deleteOne({ _id: cached._id });
+      return null;
+    }
+
     console.log(
       `✅ Using cached signals (expires at ${cached.expiresAt.toISOString()})`,
     );
