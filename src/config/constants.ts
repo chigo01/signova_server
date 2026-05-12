@@ -5,6 +5,25 @@ export const AUTH_CONSTANTS = {
   JWT_EXPIRY_MS: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
 } as const;
 
+export const PROFILE_CONSTANTS = {
+  NAME_MAX: 60,
+  USERNAME_MIN: 3,
+  USERNAME_MAX: 20,
+  USERNAME_REGEX: /^[a-z0-9_-]{3,20}$/,
+  ROLE_MAX: 60,
+  ROLES: [
+    "Trader",
+    "Active Options Trader",
+    "Swing Trader",
+    "Analyst",
+    "Business Developer",
+    "Exchange Rate Analyst",
+    "Trade Specialist",
+  ] as const,
+  AVATAR_MAX_LENGTH: 700_000,
+  AVATAR_DATA_URI_REGEX: /^data:image\/(png|jpeg|webp);base64,/,
+} as const;
+
 export const FCSAPI_CONSTANTS = {
   BASE_URL: "https://api-v4.fcsapi.com/forex/latest",
   HISTORY_URL: "https://api-v4.fcsapi.com/forex/history",

@@ -13,6 +13,7 @@ import {
   PRO_PLAN_AMOUNT_USD_MICRO,
   SubscriptionService,
 } from "../services/subscription.service";
+import { PLANS, isPlanId } from "../config/plans";
 
 function ensureAuthenticatedUser(req: Request): string {
   if (!req.user) {
@@ -34,17 +35,29 @@ export const generateUpgradePayment = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = ensureAuthenticatedUser(req);
 
+    const { planId } = req.body ?? {};
+    if (!isPlanId(planId)) {
+      throw new AppError(
+        400,
+        "planId is required and must be 'pro' or 'business'",
+      );
+    }
+
     const user = await User.findById(userId);
     if (!user) {
       throw new AppError(404, "User not found");
     }
 
+    const plan = PLANS[planId];
     const baseName = (user.name || user.email.split("@")[0])
       .replace(/[^a-zA-Z0-9 ]/g, "")
       .trim();
-    const accountName = `Pro Upgrade ${baseName}`.substring(0, 30).trim();
+    const planLabel = planId === "business" ? "Business" : "Pro";
+    const accountName = `${planLabel} Upgrade ${baseName}`
+      .substring(0, 30)
+      .trim();
 
-    const amount = PRO_PLAN_AMOUNT_USD;
+    const amount = plan.priceNgn;
     const expiryTimeInMinutes = 60;
 
     const aellaResponse = await AellaService.createDynamicVirtualAccount(
@@ -59,9 +72,11 @@ export const generateUpgradePayment = asyncHandler(
 
     const { id, accountNumber, bankName, expiresAt } = aellaResponse.data;
 
-    await Transaction.create({
+    const transaction = await Transaction.create({
       userId,
       amount,
+      planId,
+      monthsCount: plan.months,
       status: "pending",
       aellaVirtualWalletId: id,
       accountNumber,
@@ -71,9 +86,13 @@ export const generateUpgradePayment = asyncHandler(
 
     res.status(200).json({
       message: "Virtual wallet created successfully",
+      transactionId: String(transaction._id),
+      planId,
+      monthsCount: plan.months,
       accountNumber,
       bankName,
       amount,
+      displayUsd: plan.displayUsd,
       expiresAt,
     });
   },
@@ -296,6 +315,46 @@ export const getFundingBalance = asyncHandler(
   },
 );
 
+export const getTransactionStatus = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError(400, "Invalid transaction id");
+    }
+
+    const transaction = await Transaction.findOne({ _id: id, userId });
+    if (!transaction) {
+      throw new AppError(404, "Transaction not found");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new AppError(404, "User not found");
+    }
+
+    const plan = PLANS[transaction.planId];
+
+    res.status(200).json({
+      id: String(transaction._id),
+      status: transaction.status,
+      planId: transaction.planId,
+      monthsCount: transaction.monthsCount,
+      amount: transaction.amount,
+      displayUsd: plan?.displayUsd,
+      accountNumber: transaction.accountNumber,
+      bankName: transaction.bankName,
+      expiresAt: transaction.expiresAt,
+      createdAt: transaction.createdAt,
+      user: {
+        plan: user.plan,
+        proPlanExpiry: user.proPlanExpiry,
+      },
+    });
+  },
+);
+
 export const aellaWebhook = asyncHandler(
   async (req: Request, res: Response) => {
     const payload = req.body;
@@ -326,8 +385,18 @@ export const aellaWebhook = asyncHandler(
 
         const user = await User.findById(transaction.userId);
         if (user) {
-          await SubscriptionService.activateOrExtendPro(String(user._id));
-          console.log(`Successfully upgraded user ${user.email} to Pro.`);
+          const months =
+            typeof transaction.monthsCount === "number" &&
+            transaction.monthsCount > 0
+              ? transaction.monthsCount
+              : 1;
+          await SubscriptionService.activateOrExtendPro(
+            String(user._id),
+            months,
+          );
+          console.log(
+            `Successfully upgraded user ${user.email} to Pro for ${months} month(s).`,
+          );
         }
       }
     }

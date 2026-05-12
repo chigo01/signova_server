@@ -3,10 +3,15 @@ import { AuthService } from "../services/auth.service";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
 import User from "../models/user.model";
+import { PROFILE_CONSTANTS } from "../config/constants";
 
 function serializeUser(user: {
   email: string;
   name?: string;
+  username?: string;
+  role?: string;
+  avatarDataUrl?: string;
+  tradeReversalEnabled?: boolean;
   plan?: "free" | "pro";
   proPlanExpiry?: Date;
   balanceUsdMicro?: number;
@@ -14,6 +19,10 @@ function serializeUser(user: {
   return {
     email: user.email,
     name: user.name,
+    username: user.username,
+    role: user.role,
+    avatarDataUrl: user.avatarDataUrl,
+    tradeReversalEnabled: user.tradeReversalEnabled ?? true,
     plan: user.plan ?? "free",
     proPlanExpiry: user.proPlanExpiry,
     balanceUsdMicro: user.balanceUsdMicro ?? 0,
@@ -101,3 +110,122 @@ export const checkAuth = asyncHandler(async (req: Request, res: Response) => {
     user: serializeUser(user),
   });
 });
+
+export const updateProfile = asyncHandler(
+  async (req: Request, res: Response) => {
+    if (!req.user) {
+      throw new AppError(401, "Unauthorized");
+    }
+
+    const { name, username, role, avatarDataUrl, tradeReversalEnabled } =
+      req.body as {
+        name?: unknown;
+        username?: unknown;
+        role?: unknown;
+        avatarDataUrl?: unknown;
+        tradeReversalEnabled?: unknown;
+      };
+
+    const updates: Record<string, unknown> = {};
+
+    if (name !== undefined) {
+      if (typeof name !== "string") {
+        throw new AppError(400, "Name must be a string");
+      }
+      const trimmed = name.trim();
+      if (trimmed.length < 1 || trimmed.length > PROFILE_CONSTANTS.NAME_MAX) {
+        throw new AppError(
+          400,
+          `Name must be between 1 and ${PROFILE_CONSTANTS.NAME_MAX} characters`
+        );
+      }
+      updates.name = trimmed;
+    }
+
+    if (username !== undefined) {
+      if (username === null || username === "") {
+        updates.username = undefined;
+      } else {
+        if (typeof username !== "string") {
+          throw new AppError(400, "Username must be a string");
+        }
+        const normalized = username.trim().toLowerCase();
+        if (!PROFILE_CONSTANTS.USERNAME_REGEX.test(normalized)) {
+          throw new AppError(
+            400,
+            `Username must be ${PROFILE_CONSTANTS.USERNAME_MIN}-${PROFILE_CONSTANTS.USERNAME_MAX} characters using letters, numbers, hyphen, or underscore`
+          );
+        }
+        updates.username = normalized;
+      }
+    }
+
+    if (role !== undefined) {
+      if (role === null || role === "") {
+        updates.role = undefined;
+      } else {
+        if (typeof role !== "string") {
+          throw new AppError(400, "Role must be a string");
+        }
+        const allowed = PROFILE_CONSTANTS.ROLES as readonly string[];
+        if (!allowed.includes(role)) {
+          throw new AppError(400, "Role is not in the allowed list");
+        }
+        updates.role = role;
+      }
+    }
+
+    if (avatarDataUrl !== undefined) {
+      if (avatarDataUrl === null || avatarDataUrl === "") {
+        updates.avatarDataUrl = undefined;
+      } else {
+        if (typeof avatarDataUrl !== "string") {
+          throw new AppError(400, "Avatar must be a string");
+        }
+        if (!PROFILE_CONSTANTS.AVATAR_DATA_URI_REGEX.test(avatarDataUrl)) {
+          throw new AppError(
+            400,
+            "Avatar must be a base64 PNG, JPEG, or WEBP data URI"
+          );
+        }
+        if (avatarDataUrl.length > PROFILE_CONSTANTS.AVATAR_MAX_LENGTH) {
+          throw new AppError(400, "Avatar is too large");
+        }
+        updates.avatarDataUrl = avatarDataUrl;
+      }
+    }
+
+    if (tradeReversalEnabled !== undefined) {
+      if (typeof tradeReversalEnabled !== "boolean") {
+        throw new AppError(400, "tradeReversalEnabled must be a boolean");
+      }
+      updates.tradeReversalEnabled = tradeReversalEnabled;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      throw new AppError(400, "No valid fields to update");
+    }
+
+    try {
+      const user = await User.findByIdAndUpdate(req.user.userId, updates, {
+        new: true,
+        runValidators: true,
+      });
+
+      if (!user) {
+        throw new AppError(404, "User not found");
+      }
+
+      res.status(200).json({
+        message: "Profile updated",
+        user: serializeUser(user),
+      });
+    } catch (err: unknown) {
+      const error = err as { code?: number; keyPattern?: Record<string, unknown> };
+      if (error.code === 11000 && error.keyPattern?.username) {
+        throw new AppError(409, "Username taken");
+      }
+      throw err;
+    }
+  }
+);
