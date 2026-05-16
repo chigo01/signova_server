@@ -1,6 +1,7 @@
 import pLimit from "p-limit";
 import OpenAI from "openai";
 import { FinnhubService, FinnhubQuote, FinnhubTechnicals } from "./finnhub.service";
+import { FinnhubNewsService, NewsArticle } from "./news.service";
 import { AlphaVantageService } from "./alphaVantage.service";
 import StocksCache from "../models/stocksCache.model";
 import { env } from "../config/env";
@@ -245,5 +246,40 @@ Market cap: $${marketCap}M`;
       console.error(`GPT recommendation failed for ${symbol}:`, err);
       return FALLBACK_REC;
     }
+  }
+
+  static async getTopNews(limit = 20): Promise<{
+    articles: NewsArticle[];
+    lastUpdated: string;
+  }> {
+    const concurrency = pLimit(STOCKS_CONSTANTS.FINNHUB_CONCURRENCY);
+    const results = await Promise.all(
+      STOCKS_CONSTANTS.WATCHLIST.map((symbol) =>
+        concurrency(() =>
+          FinnhubNewsService.fetchCompanyNews(symbol).catch((err) => {
+            console.error(`News fetch failed for ${symbol}:`, err);
+            return [] as NewsArticle[];
+          })
+        )
+      )
+    );
+
+    const seen = new Set<number>();
+    const articles: NewsArticle[] = [];
+    for (const list of results) {
+      for (const a of list) {
+        if (!a.id || seen.has(a.id)) continue;
+        if (!a.headline || !a.url) continue;
+        seen.add(a.id);
+        articles.push(a);
+      }
+    }
+
+    articles.sort((a, b) => b.datetime - a.datetime);
+
+    return {
+      articles: articles.slice(0, limit),
+      lastUpdated: new Date().toISOString(),
+    };
   }
 }

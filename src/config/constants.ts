@@ -65,7 +65,12 @@ export const PAGINATION_CONSTANTS = {
 export const STOCKS_CONSTANTS = {
   WATCHLIST: [
     "AAPL","MSFT","NVDA","TSLA","META","AMZN","GOOGL","NFLX",
-    "AMD","PLTR","COIN","SQ","UBER","PYPL","SNOW","CRM","SPY","QQQ","HOOD","SOFI"
+    "AMD","AVGO","TSM","ARM","MU","SMCI","QCOM","INTC",
+    "ORCL","CRM","NOW","SNOW","DDOG","CRWD","NET","MDB",
+    "PLTR","COIN","XYZ","PYPL","HOOD","SOFI","MSTR","UBER",
+    "LLY","NVO","JPM","GS","COST","WMT","XOM","CVX",
+    "DIS","SPOT","RBLX","F","RIVN",
+    "SPY","QQQ","IWM","DIA","GLD","TLT"
   ],
   TOP_MOVERS_COUNT: 5,
   CACHE_TTL_MINUTES: {

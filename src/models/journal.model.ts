@@ -110,7 +110,12 @@ const JournalSchema = new Schema<IJournal>(
   { timestamps: true },
 );
 
-JournalSchema.index({ userId: 1, isDefault: 1 }, { unique: true });
+// Only the *default* journal must be unique per user. Non-default
+// journals are unconstrained so a user can create as many as they like.
+JournalSchema.index(
+  { userId: 1 },
+  { unique: true, partialFilterExpression: { isDefault: true } },
+);
 JournalSchema.index({ userId: 1, updatedAt: -1 });
 
 export default mongoose.model<IJournal>("Journal", JournalSchema);

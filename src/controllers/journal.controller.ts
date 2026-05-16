@@ -28,6 +28,36 @@ export const getDefaultJournal = asyncHandler(
   },
 );
 
+export const listJournals = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const journals = await JournalService.listJournals(userId);
+
+    res.status(200).json({ success: true, journals });
+  },
+);
+
+export const createJournal = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const journal = await JournalService.createJournal(userId);
+
+    res.status(201).json({ success: true, journal });
+  },
+);
+
+export const getJournal = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const journal = await JournalService.getJournal(
+      userId,
+      req.params.journalId,
+    );
+
+    res.status(200).json({ success: true, journal });
+  },
+);
+
 export const updateJournal = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = ensureAuthenticatedUser(req);

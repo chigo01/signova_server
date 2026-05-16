@@ -92,6 +92,13 @@ function rowFromSignalPlay(signalPlay: {
   };
 }
 
+export interface JournalSummary {
+  _id: string;
+  title: string;
+  isDefault: boolean;
+  updatedAt: Date;
+}
+
 export class JournalService {
   static async getOrCreateDefaultJournal(userId: string): Promise<IJournal> {
     const userObjectId = normalizeObjectId(userId, "userId");
@@ -110,6 +117,40 @@ export class JournalService {
       views: DEFAULT_VIEWS,
       rows: [],
     });
+  }
+
+  static async listJournals(userId: string): Promise<JournalSummary[]> {
+    const userObjectId = normalizeObjectId(userId, "userId");
+    const journals = await Journal.find(
+      { userId: userObjectId },
+      { title: 1, isDefault: 1, updatedAt: 1 },
+    ).sort({ updatedAt: -1 });
+
+    return journals.map((journal) => ({
+      _id: String(journal._id),
+      title: journal.title,
+      isDefault: journal.isDefault,
+      updatedAt: journal.updatedAt,
+    }));
+  }
+
+  static async createJournal(userId: string): Promise<IJournal> {
+    const userObjectId = normalizeObjectId(userId, "userId");
+    return await Journal.create({
+      userId: userObjectId,
+      title: "",
+      isDefault: false,
+      properties: DEFAULT_PROPERTIES,
+      views: DEFAULT_VIEWS,
+      rows: [],
+    });
+  }
+
+  static async getJournal(
+    userId: string,
+    journalId: string,
+  ): Promise<IJournal> {
+    return await this.getUserJournal(userId, journalId);
   }
 
   static async updateJournal(

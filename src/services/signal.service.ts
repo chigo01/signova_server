@@ -71,6 +71,14 @@ export class SignalService {
   }
 
   /**
+   * Delete the cached approved-signals doc so the next read repopulates.
+   * Called from the invalidation webhook when admin-server mutates a signal.
+   */
+  public static async invalidateApprovedCache(): Promise<void> {
+    await SignalsCache.deleteOne({ cacheKey: SIGNALS_CACHE_KEY });
+  }
+
+  /**
    * Cache signals data
    */
   private static async cacheSignals(signals: any): Promise<void> {

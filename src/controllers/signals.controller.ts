@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { SignalService } from "../services/signal.service";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
+import { env } from "../config/env";
 
 export const getApprovedSignals = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -57,5 +58,19 @@ export const getApprovedSignalsWinRate = asyncHandler(
   async (_req: Request, res: Response) => {
     const stats = await SignalService.getApprovedSignalsWinRate();
     res.status(200).json({ success: true, ...stats });
+  },
+);
+
+export const invalidateApprovedCache = asyncHandler(
+  async (req: Request, res: Response) => {
+    const expected = env.SIGNALS_INVALIDATE_SECRET;
+    if (!expected) {
+      throw new AppError(503, "Cache invalidation not configured");
+    }
+    if (req.header("x-invalidate-secret") !== expected) {
+      throw new AppError(401, "Invalid invalidation secret");
+    }
+    await SignalService.invalidateApprovedCache();
+    res.status(204).send();
   },
 );

@@ -8,3 +8,10 @@ export const getRecommendations = asyncHandler(
     res.status(200).json(data);
   }
 );
+
+export const getTopNews = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const data = await StocksService.getTopNews();
+    res.status(200).json(data);
+  }
+);
