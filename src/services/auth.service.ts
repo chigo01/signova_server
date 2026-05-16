@@ -1,10 +1,10 @@
-import User from "../models/user.model";
-import { Resend } from "resend";
+import User, { IUser } from "../models/user.model";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { AUTH_CONSTANTS } from "../config/constants";
-
-const resend = new Resend(env.RESEND_API_KEY);
+import { sendEmail } from "./email/email.service";
+import { welcomeEmail } from "./email/templates/welcome";
+import { deriveFirstName } from "./email/templates/_shared";
 
 export class AuthService {
   private static isTestOtpEmail(normalizedEmail: string): boolean {
@@ -67,17 +67,34 @@ export class AuthService {
       return;
     }
 
+    await sendEmail({
+      to: email,
+      subject: "Your Signova Login Code",
+      html: `<p>Your code is <strong>${otp}</strong></p>`,
+    });
+  }
+
+  /**
+   * Send the beta Welcome email exactly once per user (first sign-up confirmation).
+   * Fire-and-forget: errors are logged but never block auth flow.
+   */
+  private static async maybeSendWelcomeEmail(user: IUser): Promise<void> {
+    if (user.welcomedAt) return;
+    user.welcomedAt = new Date();
     try {
-      await resend.emails.send({
-        from: "noreply@signova.app",
-        to: email,
-        subject: "Your Signova Login Code",
-        html: `<p>Your code is <strong>${otp}</strong></p>`,
+      await user.save();
+    } catch (saveErr) {
+      console.error("Welcome email: failed to persist welcomedAt", saveErr);
+      return;
+    }
+
+    try {
+      const { subject, html } = welcomeEmail({
+        firstName: deriveFirstName(user.name),
       });
-    } catch (emailError) {
-      console.error("Resend Error:", emailError);
-      // Fallback for dev: log it
-      console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
+      await sendEmail({ to: user.email, subject, html });
+    } catch (err) {
+      console.error("Welcome email: send failed", err);
     }
   }
 
@@ -107,6 +124,8 @@ export class AuthService {
         await user.save();
       }
 
+      await this.maybeSendWelcomeEmail(user);
+
       return {
         _id: user._id,
         email: user.email,
@@ -131,6 +150,8 @@ export class AuthService {
     user.otp = undefined;
     user.otpExpiry = undefined;
     await user.save();
+
+    await this.maybeSendWelcomeEmail(user);
 
     return {
       _id: user._id,
@@ -192,6 +213,8 @@ export class AuthService {
     } else {
       user = await new User({ email, name, googleId }).save();
     }
+
+    await this.maybeSendWelcomeEmail(user);
 
     return {
       _id: user._id,
