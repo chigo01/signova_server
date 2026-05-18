@@ -7,10 +7,9 @@ export interface ITransaction extends Document {
   amount: number;
   planId: TransactionPlanId;
   monthsCount: number;
-  status: 'pending' | 'success' | 'failed';
-  aellaVirtualWalletId: string; // The ID of the virtual account from Aella
-  accountNumber: string;
-  bankName: string;
+  status: "pending" | "success" | "failed";
+  paystackReference: string;
+  authorizationUrl: string;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -22,17 +21,25 @@ const TransactionSchema: Schema = new Schema(
     amount: { type: Number, required: true },
     planId: {
       type: String,
-      enum: ['pro', 'business'],
+      enum: ["pro", "business"],
       required: true,
     },
     monthsCount: { type: Number, required: true, min: 1 },
-    status: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
-    aellaVirtualWalletId: { type: String, required: true },
-    accountNumber: { type: String, required: true },
-    bankName: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ["pending", "success", "failed"],
+      default: "pending",
+    },
+    paystackReference: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    authorizationUrl: { type: String, required: true },
     expiresAt: { type: Date, required: true },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export default mongoose.model<ITransaction>("Transaction", TransactionSchema);

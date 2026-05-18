@@ -13,6 +13,7 @@ import signalsRoutes from "./routes/signals.routes";
 import youtubeRoutes from "./routes/youtube.routes";
 import stocksRoutes from "./routes/stocks.routes";
 import paymentsRoutes from "./routes/payments.routes";
+import paystackWebhookRoutes from "./routes/paystack-webhook.routes";
 import tvRoutes from "./routes/tv.routes";
 import analysisRoutes from "./routes/analysis.routes";
 import journalRoutes from "./routes/journal.routes";
@@ -41,6 +42,10 @@ app.use(
 app.use(helmet());
 app.use(morgan("dev"));
 app.use(cookieParser());
+
+// Paystack webhook needs raw bytes for HMAC verification — mount before express.json()
+app.use("/payments/webhook", paystackWebhookRoutes);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

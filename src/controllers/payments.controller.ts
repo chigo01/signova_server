@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
+import crypto from "crypto";
 import mongoose from "mongoose";
 import Deposit from "../models/deposit.model";
-import Transaction from "../models/transaction.model";
+import Transaction, { ITransaction } from "../models/transaction.model";
 import User from "../models/user.model";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
-import { AellaService } from "../services/aella.service";
+import { PaystackService } from "../services/paystack.service";
 import { DextopusDepositSyncService } from "../services/dextopusDepositSync.service";
 import { DextopusService } from "../services/dextopus.service";
 import {
@@ -14,6 +15,23 @@ import {
   SubscriptionService,
 } from "../services/subscription.service";
 import { PLANS, isPlanId } from "../config/plans";
+import { env } from "../config/env";
+
+const PAYMENT_EXPIRY_MS = 60 * 60 * 1000;
+
+async function applySuccessfulPayment(transaction: ITransaction): Promise<void> {
+  if (transaction.status === "success") return;
+  transaction.status = "success";
+  await transaction.save();
+  const months =
+    typeof transaction.monthsCount === "number" && transaction.monthsCount > 0
+      ? transaction.monthsCount
+      : 1;
+  await SubscriptionService.activateOrExtendPro(
+    String(transaction.userId),
+    months,
+  );
+}
 
 function ensureAuthenticatedUser(req: Request): string {
   if (!req.user) {
@@ -49,49 +67,46 @@ export const generateUpgradePayment = asyncHandler(
     }
 
     const plan = PLANS[planId];
-    const baseName = (user.name || user.email.split("@")[0])
-      .replace(/[^a-zA-Z0-9 ]/g, "")
-      .trim();
-    const planLabel = planId === "business" ? "Business" : "Pro";
-    const accountName = `${planLabel} Upgrade ${baseName}`
-      .substring(0, 30)
-      .trim();
+    const reference = `signova_${planId}_${userId}_${crypto
+      .randomBytes(6)
+      .toString("hex")}`;
+    const callbackUrl =
+      env.PAYSTACK_CALLBACK_URL ??
+      `${env.FRONTEND_URL.replace(/\/$/, "")}/dashboard/settings/pricing`;
 
-    const amount = plan.priceNgn;
-    const expiryTimeInMinutes = 60;
+    const paystack = await PaystackService.initializeTransaction({
+      email: user.email,
+      amountNgn: plan.priceNgn,
+      reference,
+      callbackUrl,
+      metadata: {
+        userId: String(user._id),
+        planId,
+        monthsCount: plan.months,
+      },
+    });
 
-    const aellaResponse = await AellaService.createDynamicVirtualAccount(
-      accountName,
-      amount,
-      expiryTimeInMinutes,
-    );
-
-    if (!aellaResponse.success) {
-      throw new AppError(500, "Failed to create virtual wallet");
-    }
-
-    const { id, accountNumber, bankName, expiresAt } = aellaResponse.data;
+    const expiresAt = new Date(Date.now() + PAYMENT_EXPIRY_MS);
 
     const transaction = await Transaction.create({
       userId,
-      amount,
+      amount: plan.priceNgn,
       planId,
       monthsCount: plan.months,
       status: "pending",
-      aellaVirtualWalletId: id,
-      accountNumber,
-      bankName,
+      paystackReference: paystack.reference,
+      authorizationUrl: paystack.authorizationUrl,
       expiresAt,
     });
 
     res.status(200).json({
-      message: "Virtual wallet created successfully",
+      message: "Payment initialized",
       transactionId: String(transaction._id),
       planId,
       monthsCount: plan.months,
-      accountNumber,
-      bankName,
-      amount,
+      authorizationUrl: paystack.authorizationUrl,
+      reference: paystack.reference,
+      amount: plan.priceNgn,
       displayUsd: plan.displayUsd,
       expiresAt,
     });
@@ -329,6 +344,30 @@ export const getTransactionStatus = asyncHandler(
       throw new AppError(404, "Transaction not found");
     }
 
+    if (
+      transaction.status === "pending" &&
+      transaction.expiresAt.getTime() > Date.now()
+    ) {
+      try {
+        const verified = await PaystackService.verifyTransaction(
+          transaction.paystackReference,
+        );
+        if (verified.status === "success") {
+          await applySuccessfulPayment(transaction);
+        } else if (verified.status === "failed" || verified.status === "reversed") {
+          transaction.status = "failed";
+          await transaction.save();
+        }
+        // "abandoned", "ongoing", "pending" → keep transaction pending; webhook
+        // or a later poll (after user pays) or expiresAt timeout will resolve it.
+      } catch (err) {
+        console.warn(
+          `Paystack verify fallback failed for ${transaction.paystackReference}:`,
+          (err as Error).message,
+        );
+      }
+    }
+
     const user = await User.findById(userId);
     if (!user) {
       throw new AppError(404, "User not found");
@@ -343,8 +382,8 @@ export const getTransactionStatus = asyncHandler(
       monthsCount: transaction.monthsCount,
       amount: transaction.amount,
       displayUsd: plan?.displayUsd,
-      accountNumber: transaction.accountNumber,
-      bankName: transaction.bankName,
+      authorizationUrl: transaction.authorizationUrl,
+      reference: transaction.paystackReference,
       expiresAt: transaction.expiresAt,
       createdAt: transaction.createdAt,
       user: {
@@ -355,49 +394,53 @@ export const getTransactionStatus = asyncHandler(
   },
 );
 
-export const aellaWebhook = asyncHandler(
+export const paystackWebhook = asyncHandler(
   async (req: Request, res: Response) => {
-    const payload = req.body;
+    const rawBody = req.body as Buffer;
+    const signature = req.headers["x-paystack-signature"] as string | undefined;
 
-    if (
-      payload.event === "inwards.completed" &&
-      payload.data.status === "Success"
-    ) {
-      const sourceWallet = payload.data.sourceWallet;
+    if (!Buffer.isBuffer(rawBody)) {
+      console.warn(
+        "Paystack webhook received without raw body — check express.raw mount order",
+      );
+      res.status(400).send("invalid body");
+      return;
+    }
 
-      if (!sourceWallet) {
-        res.status(200).send("OK: Ignoring non-virtual-wallet inward transfer");
+    if (!PaystackService.verifyWebhookSignature(rawBody, signature)) {
+      console.warn("Paystack webhook signature mismatch");
+      res.status(401).send("invalid signature");
+      return;
+    }
+
+    let payload: { event?: string; data?: { reference?: string } };
+    try {
+      payload = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      res.status(400).send("invalid json");
+      return;
+    }
+
+    if (payload.event === "charge.success") {
+      const reference = payload.data?.reference;
+      if (!reference) {
+        res.status(200).send("OK: missing reference");
         return;
       }
-
       const transaction = await Transaction.findOne({
-        aellaVirtualWalletId: sourceWallet,
+        paystackReference: reference,
       });
       if (!transaction) {
-        console.warn(`Webhook received for unknown wallet id: ${sourceWallet}`);
-        res.status(200).send("OK: Transaction not found");
+        console.warn(`Webhook received for unknown reference: ${reference}`);
+        res.status(200).send("OK: transaction not found");
         return;
       }
-
       if (transaction.status !== "success") {
-        transaction.status = "success";
-        await transaction.save();
-
+        await applySuccessfulPayment(transaction);
         const user = await User.findById(transaction.userId);
-        if (user) {
-          const months =
-            typeof transaction.monthsCount === "number" &&
-            transaction.monthsCount > 0
-              ? transaction.monthsCount
-              : 1;
-          await SubscriptionService.activateOrExtendPro(
-            String(user._id),
-            months,
-          );
-          console.log(
-            `Successfully upgraded user ${user.email} to Pro for ${months} month(s).`,
-          );
-        }
+        console.log(
+          `Successfully upgraded ${user?.email ?? transaction.userId} via Paystack reference ${reference}.`,
+        );
       }
     }
 

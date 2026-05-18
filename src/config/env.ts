@@ -34,7 +34,8 @@ interface EnvConfig {
   FINNHUB_API_KEY?: string;
   ALPHAVANTAGE_API_KEY?: string;
   OPENAI_API_KEY?: string;
-  AELLA_SECRET_KEY?: string;
+  PAYSTACK_SECRET_KEY: string;
+  PAYSTACK_CALLBACK_URL?: string;
   DEXTOPUS_BASE_URL: string;
   DEXTOPUS_TREASURY_RECIPIENT?: string;
   DEXTOPUS_DESTINATION_CHAIN_ID?: number;
@@ -55,7 +56,7 @@ function parseOptionalInt(value: string | undefined): number | undefined {
 }
 
 function validateEnv(): EnvConfig {
-  const required = ["MONGO_URI", "JWT_SECRET"];
+  const required = ["MONGO_URI", "JWT_SECRET", "PAYSTACK_SECRET_KEY"];
   const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
@@ -68,7 +69,7 @@ function validateEnv(): EnvConfig {
     "FINNHUB_API_KEY",
     "ALPHAVANTAGE_API_KEY",
     "OPENAI_API_KEY",
-    "AELLA_SECRET_KEY",
+    "PAYSTACK_CALLBACK_URL",
     "DEXTOPUS_TREASURY_RECIPIENT",
     "DEXTOPUS_DESTINATION_CHAIN_ID",
     "DEXTOPUS_DESTINATION_ASSET",
@@ -141,7 +142,8 @@ function validateEnv(): EnvConfig {
     FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     ALPHAVANTAGE_API_KEY: process.env.ALPHAVANTAGE_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    AELLA_SECRET_KEY: process.env.AELLA_SECRET_KEY,
+    PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY!,
+    PAYSTACK_CALLBACK_URL: process.env.PAYSTACK_CALLBACK_URL,
     DEXTOPUS_BASE_URL:
       process.env.DEXTOPUS_BASE_URL || "https://swap-api.dextopus.com",
     DEXTOPUS_TREASURY_RECIPIENT: process.env.DEXTOPUS_TREASURY_RECIPIENT,
