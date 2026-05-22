@@ -33,11 +33,42 @@ interface GPTRec {
   reasons: string[];
 }
 
-const FALLBACK_REC: GPTRec = {
-  recommendation: "HOLD",
-  confidence: 50,
-  reasons: ["Analysis temporarily unavailable"],
-};
+/**
+ * Deterministic recommendation derived from the technical data we already have
+ * from Finnhub. Used whenever the GPT analysis is unavailable (no key, empty
+ * response, or API error) so users still see meaningful, per-stock analysis
+ * instead of a dead "unavailable" message.
+ */
+function technicalFallback(
+  signal: "buy" | "sell" | "neutral",
+  count: { buy: number; neutral: number; sell: number },
+  adx: number,
+  trending: boolean,
+  changePercent: number
+): GPTRec {
+  const total = count.buy + count.neutral + count.sell;
+  const recommendation =
+    signal === "buy" ? "BUY" : signal === "sell" ? "SELL" : "HOLD";
+
+  // Confidence from dominant-signal share, boosted by a strong trend.
+  const dominant =
+    signal === "buy" ? count.buy : signal === "sell" ? count.sell : count.neutral;
+  const share = total > 0 ? dominant / total : 0;
+  let confidence = Math.round(40 + share * 40); // 40–80 base
+  if (trending && adx >= 25) confidence += 10;
+  confidence = Math.max(35, Math.min(95, confidence));
+
+  const reasons: string[] = [
+    `Technical signals lean ${recommendation} (${count.buy} buy / ${count.neutral} neutral / ${count.sell} sell).`,
+    trending ? `Trending market (ADX ${adx}).` : `Ranging market (ADX ${adx}).`,
+  ];
+  if (Number.isFinite(changePercent) && Math.abs(changePercent) >= 0.01) {
+    reasons.push(
+      `${changePercent >= 0 ? "Up" : "Down"} ${Math.abs(changePercent).toFixed(2)}% today.`
+    );
+  }
+  return { recommendation, confidence, reasons };
+}
 
 export class StocksService {
   private static openai: OpenAI | null = env.OPENAI_API_KEY
@@ -184,18 +215,24 @@ export class StocksService {
     });
     if (cached) return cached.data as GPTRec;
 
-    if (!this.openai) return FALLBACK_REC;
+    const count = technicals.technicalAnalysis?.count || {
+      buy: 0,
+      neutral: 0,
+      sell: 0,
+    };
+    const signal = technicals.technicalAnalysis?.signal || "neutral";
+    const adx = technicals.trend?.adx || 0;
+    const trending = technicals.trend?.trending || false;
+    const fallback = technicalFallback(signal, count, adx, trending, quote.dp || 0);
+
+    if (!this.openai) {
+      console.warn(
+        "[StocksService] OPENAI_API_KEY missing — using technical fallback"
+      );
+      return fallback;
+    }
 
     try {
-      const count = technicals.technicalAnalysis?.count || {
-        buy: 0,
-        neutral: 0,
-        sell: 0,
-      };
-      const signal = technicals.technicalAnalysis?.signal || "neutral";
-      const adx = technicals.trend?.adx || 0;
-      const trending = technicals.trend?.trending || false;
-
       const userPrompt = `Ticker: ${symbol} | Company: ${name} | Sector: ${sector}
 Price: $${quote.c} (${quote.dp}% today) | Range: $${quote.l}–$${quote.h}
 Technical aggregate (${trending ? "trending" : "ranging"} market, ADX ${adx}):
@@ -219,7 +256,7 @@ Market cap: $${marketCap}M`;
       });
 
       const content = completion.choices[0]?.message?.content;
-      if (!content) return FALLBACK_REC;
+      if (!content) return fallback;
 
       const parsed = JSON.parse(content) as GPTRec;
 
@@ -243,8 +280,12 @@ Market cap: $${marketCap}M`;
 
       return parsed;
     } catch (err) {
-      console.error(`GPT recommendation failed for ${symbol}:`, err);
-      return FALLBACK_REC;
+      console.error(
+        `GPT recommendation failed for ${symbol}:`,
+        (err as { status?: number })?.status,
+        (err as Error)?.message
+      );
+      return fallback;
     }
   }
 
