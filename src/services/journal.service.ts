@@ -16,13 +16,13 @@ export interface JournalUpdateData {
 }
 
 const DEFAULT_PROPERTIES: JournalProperty[] = [
-  { id: "pair", name: "Pair", type: "text", width: 330 },
-  { id: "date", name: "Date", type: "date", width: 330 },
+  { id: "pair", name: "Pair", type: "text", width: 260 },
+  { id: "date", name: "Date", type: "date", width: 200 },
   {
     id: "bias",
     name: "Bias",
     type: "select",
-    width: 330,
+    width: 200,
     options: [
       { id: "daily-bullish", label: "Daily bullish", color: "emerald" },
       { id: "daily-bearish", label: "Daily bearish", color: "rose" },
@@ -30,21 +30,32 @@ const DEFAULT_PROPERTIES: JournalProperty[] = [
     ],
   },
   {
-    id: "tags",
-    name: "Tags",
+    id: "point-of-interest",
+    name: "Point of interest",
     type: "multi-select",
-    width: 220,
+    width: 240,
     options: [
       { id: "eq", label: "EQ", color: "cyan" },
       { id: "ob", label: "OB", color: "rose" },
       { id: "fvg", label: "FVG", color: "amber" },
     ],
-    hidden: true,
+  },
+  {
+    id: "outcome",
+    name: "Outcome",
+    type: "select",
+    width: 200,
+    options: [
+      { id: "win", label: "Win", color: "emerald" },
+      { id: "loss", label: "Loss", color: "rose" },
+      { id: "break-even", label: "Break-even", color: "zinc" },
+    ],
   },
 ];
 
 const DEFAULT_VIEWS: JournalView[] = [
   { id: "table", name: "Table", type: "table" },
+  { id: "calendar", name: "Calendar", type: "calendar" },
 ];
 
 function normalizeObjectId(id: string, label: string): mongoose.Types.ObjectId {
@@ -82,7 +93,8 @@ function rowFromSignalPlay(signalPlay: {
       date: signalPlay.playedAt.toISOString(),
       bias:
         signalPlay.signalType === "buy" ? "Daily bullish" : "Daily bearish",
-      tags: [],
+      "point-of-interest": [],
+      outcome: "",
       entryPrice: signalPlay.entryPrice,
       targetPrice: signalPlay.targetPrice,
       stopLoss: signalPlay.stopLoss,
@@ -259,6 +271,48 @@ export class JournalService {
     }
 
     return { journal, importedCount: newRows.length };
+  }
+
+  static async deleteJournal(
+    userId: string,
+    journalId: string,
+  ): Promise<void> {
+    const userObjectId = normalizeObjectId(userId, "userId");
+    const journalObjectId = normalizeObjectId(journalId, "journalId");
+
+    // Don't allow deleting the user's only journal — keeps the empty-state
+    // flow simpler on the client and matches the UI guard.
+    const total = await Journal.countDocuments({ userId: userObjectId });
+    if (total <= 1) {
+      throw new AppError(
+        400,
+        "You can't delete your only journal. Create another first.",
+      );
+    }
+
+    const journal = await Journal.findOne({
+      _id: journalObjectId,
+      userId: userObjectId,
+    });
+    if (!journal) {
+      throw new AppError(404, "Journal not found");
+    }
+
+    // If the default journal is being deleted, promote the most recently
+    // updated remaining journal to default so the user still has one
+    // reachable via /journal/default.
+    const wasDefault = journal.isDefault;
+    await journal.deleteOne();
+
+    if (wasDefault) {
+      const successor = await Journal.findOne({ userId: userObjectId }).sort({
+        updatedAt: -1,
+      });
+      if (successor) {
+        successor.isDefault = true;
+        await successor.save();
+      }
+    }
   }
 
   private static async getUserJournal(

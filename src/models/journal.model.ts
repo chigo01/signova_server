@@ -5,12 +5,27 @@ export type JournalPropertyType =
   | "date"
   | "select"
   | "multi-select"
-  | "number";
+  | "number"
+  | "ai";
+
+export type JournalAiKind = "summary" | "key-info" | "custom" | "translation";
 
 export interface JournalPropertyOption {
   id: string;
   label: string;
   color: string;
+}
+
+export interface JournalAiConfig {
+  kind: JournalAiKind;
+  // Custom autofill: free-form prompt. Summary/key-info: optional override.
+  prompt?: string;
+  // Translation only.
+  targetLanguage?: string;
+  // Which other property ids feed into the prompt context. Empty = all visible cells.
+  sourcePropertyIds?: string[];
+  // Cache the model id so re-generation stays consistent.
+  model?: string;
 }
 
 export interface JournalProperty {
@@ -20,6 +35,7 @@ export interface JournalProperty {
   options?: JournalPropertyOption[];
   width?: number;
   hidden?: boolean;
+  ai?: JournalAiConfig;
 }
 
 export interface JournalView {
@@ -57,18 +73,34 @@ const JournalPropertyOptionSchema = new Schema<JournalPropertyOption>(
   { _id: false },
 );
 
+const JournalAiConfigSchema = new Schema<JournalAiConfig>(
+  {
+    kind: {
+      type: String,
+      enum: ["summary", "key-info", "custom", "translation"],
+      required: true,
+    },
+    prompt: { type: String },
+    targetLanguage: { type: String },
+    sourcePropertyIds: { type: [String], default: undefined },
+    model: { type: String },
+  },
+  { _id: false },
+);
+
 const JournalPropertySchema = new Schema<JournalProperty>(
   {
     id: { type: String, required: true },
     name: { type: String, required: true },
     type: {
       type: String,
-      enum: ["text", "date", "select", "multi-select", "number"],
+      enum: ["text", "date", "select", "multi-select", "number", "ai"],
       required: true,
     },
     options: { type: [JournalPropertyOptionSchema], default: undefined },
     width: { type: Number },
     hidden: { type: Boolean, default: false },
+    ai: { type: JournalAiConfigSchema, default: undefined },
   },
   { _id: false },
 );

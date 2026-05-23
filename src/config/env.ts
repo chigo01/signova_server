@@ -34,6 +34,7 @@ interface EnvConfig {
   FINNHUB_API_KEY?: string;
   ALPHAVANTAGE_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_CALLBACK_URL?: string;
   DEXTOPUS_BASE_URL: string;
@@ -69,6 +70,7 @@ function validateEnv(): EnvConfig {
     "FINNHUB_API_KEY",
     "ALPHAVANTAGE_API_KEY",
     "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
     "PAYSTACK_CALLBACK_URL",
     "DEXTOPUS_TREASURY_RECIPIENT",
     "DEXTOPUS_DESTINATION_CHAIN_ID",
@@ -142,6 +144,7 @@ function validateEnv(): EnvConfig {
     FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     ALPHAVANTAGE_API_KEY: process.env.ALPHAVANTAGE_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY!,
     PAYSTACK_CALLBACK_URL: process.env.PAYSTACK_CALLBACK_URL,
     DEXTOPUS_BASE_URL:

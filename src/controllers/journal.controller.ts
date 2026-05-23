@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
 import { JournalService } from "../services/journal.service";
+import { AiColumnService } from "../services/aiColumn.service";
 
 function ensureAuthenticatedUser(req: Request): string {
   if (!req.user) {
@@ -109,5 +110,59 @@ export const importSignalPlays = asyncHandler(
     );
 
     res.status(200).json({ success: true, importedCount, journal });
+  },
+);
+
+export const deleteJournal = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    await JournalService.deleteJournal(userId, req.params.journalId);
+    res.status(200).json({ success: true });
+  },
+);
+
+export const askJournal = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const question = req.body?.question;
+    if (typeof question !== "string" || !question.trim()) {
+      throw new AppError(400, "question is required");
+    }
+    const result = await AiColumnService.askJournal({
+      userId,
+      journalId: req.params.journalId,
+      question,
+    });
+    res.status(200).json({
+      success: true,
+      answer: result.answer,
+      model: result.model,
+      usage: { tokensIn: result.tokensIn, tokensOut: result.tokensOut },
+    });
+  },
+);
+
+export const generateAiCell = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const propertyId = req.body?.propertyId;
+    if (typeof propertyId !== "string" || !propertyId.trim()) {
+      throw new AppError(400, "propertyId is required");
+    }
+
+    const result = await AiColumnService.generateAiCell({
+      userId,
+      journalId: req.params.journalId,
+      rowId: req.params.rowId,
+      propertyId,
+    });
+
+    res.status(200).json({
+      success: true,
+      journal: result.journal,
+      value: result.value,
+      model: result.model,
+      usage: { tokensIn: result.tokensIn, tokensOut: result.tokensOut },
+    });
   },
 );
