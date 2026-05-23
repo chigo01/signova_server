@@ -22,6 +22,7 @@ export const PROFILE_CONSTANTS = {
   ] as const,
   AVATAR_MAX_LENGTH: 700_000,
   AVATAR_DATA_URI_REGEX: /^data:image\/(png|jpeg|webp);base64,/,
+  PHONE_E164_REGEX: /^\+[1-9]\d{1,14}$/,
 } as const;
 
 export const FCSAPI_CONSTANTS = {

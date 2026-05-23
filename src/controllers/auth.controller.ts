@@ -8,6 +8,7 @@ import { PROFILE_CONSTANTS } from "../config/constants";
 function serializeUser(user: {
   email: string;
   name?: string;
+  phone?: string;
   username?: string;
   role?: string;
   avatarDataUrl?: string;
@@ -19,6 +20,7 @@ function serializeUser(user: {
   return {
     email: user.email,
     name: user.name,
+    phone: user.phone,
     username: user.username,
     role: user.role,
     avatarDataUrl: user.avatarDataUrl,
@@ -30,13 +32,28 @@ function serializeUser(user: {
 }
 
 export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
-  const { email, name } = req.body;
+  const { email, name, phone } = req.body;
 
   if (!email) {
     throw new AppError(400, "Email is required");
   }
 
-  await AuthService.sendOTP(email, name);
+  let normalizedPhone: string | undefined;
+  if (phone !== undefined && phone !== null && phone !== "") {
+    if (typeof phone !== "string") {
+      throw new AppError(400, "Phone must be a string");
+    }
+    const trimmed = phone.trim();
+    if (trimmed && !PROFILE_CONSTANTS.PHONE_E164_REGEX.test(trimmed)) {
+      throw new AppError(
+        400,
+        "Phone must be a valid E.164 number, e.g. +14155550100"
+      );
+    }
+    normalizedPhone = trimmed || undefined;
+  }
+
+  await AuthService.sendOTP(email, name, normalizedPhone);
 
   res.status(200).json({ message: "OTP sent successfully" });
 });

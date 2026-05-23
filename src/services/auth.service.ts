@@ -27,7 +27,11 @@ export class AuthService {
   /**
    * Send OTP to user's email and save to database
    */
-  static async sendOTP(email: string, name?: string): Promise<void> {
+  static async sendOTP(
+    email: string,
+    name?: string,
+    phone?: string
+  ): Promise<void> {
     const normalized = email.trim().toLowerCase();
     const testBypass = this.isTestOtpEmail(normalized);
     const lookupEmail = testBypass ? normalized : email.trim();
@@ -39,11 +43,12 @@ export class AuthService {
     // Find or create user and update OTP
     let user = await User.findOne({ email: lookupEmail });
     if (!user) {
-      user = new User({ email: lookupEmail, name, otp, otpExpiry });
+      user = new User({ email: lookupEmail, name, phone, otp, otpExpiry });
     } else {
       user.otp = otp;
       user.otpExpiry = otpExpiry;
       if (name) user.name = name;
+      if (phone) user.phone = phone;
     }
     await user.save();
 
@@ -108,6 +113,7 @@ export class AuthService {
     _id: any;
     email: string;
     name?: string;
+    phone?: string;
     plan: "free" | "pro";
     proPlanExpiry?: Date;
     balanceUsdMicro: number;
@@ -130,6 +136,7 @@ export class AuthService {
         _id: user._id,
         email: user.email,
         name: user.name,
+        phone: user.phone,
         plan: user.plan,
         proPlanExpiry: user.proPlanExpiry,
         balanceUsdMicro: user.balanceUsdMicro,
@@ -157,6 +164,7 @@ export class AuthService {
       _id: user._id,
       email: user.email,
       name: user.name,
+      phone: user.phone,
       plan: user.plan,
       proPlanExpiry: user.proPlanExpiry,
       balanceUsdMicro: user.balanceUsdMicro,
@@ -198,6 +206,7 @@ export class AuthService {
     _id: any;
     email: string;
     name?: string;
+    phone?: string;
     plan: "free" | "pro";
     proPlanExpiry?: Date;
     balanceUsdMicro: number;
@@ -220,6 +229,7 @@ export class AuthService {
       _id: user._id,
       email: user.email,
       name: user.name,
+      phone: user.phone,
       plan: user.plan,
       proPlanExpiry: user.proPlanExpiry,
       balanceUsdMicro: user.balanceUsdMicro,
