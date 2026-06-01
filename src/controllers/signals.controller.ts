@@ -234,6 +234,14 @@ export const handleSignalAlert = asyncHandler(
       return;
     }
 
+    // PAUSED: SL hit and SL-approaching emails to users are temporarily disabled.
+    // Acknowledge with 200 so admin-server's webhook forward succeeds and does not
+    // retry. Remove this block to resume SL emails. TP1/TP2 are unaffected.
+    if (payload.alertType === "SL" || payload.alertType === "SL_WARNING") {
+      res.status(200).json({ status: "paused" });
+      return;
+    }
+
     // Idempotency gate: try to create the (signalId, alertType) record first.
     // If the unique index rejects it (E11000), the alert has already been
     // processed — return early without sending. This is what makes the
