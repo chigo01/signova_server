@@ -28,6 +28,7 @@ interface EnvConfig {
   FRONTEND_URLS: string[];
   ADMIN_SERVER_URL: string;
   SIGNALS_INVALIDATE_SECRET?: string;
+  SIGNALS_ALERT_SECRET?: string;
   RESEND_API_KEY?: string;
   FCSAPI_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -138,6 +139,7 @@ function validateEnv(): EnvConfig {
     ADMIN_SERVER_URL:
       process.env.ADMIN_SERVER_URL || "http://localhost:8000",
     SIGNALS_INVALIDATE_SECRET: process.env.SIGNALS_INVALIDATE_SECRET,
+    SIGNALS_ALERT_SECRET: process.env.SIGNALS_ALERT_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     FCSAPI_KEY: process.env.FCSAPI_KEY,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,

@@ -21,6 +21,21 @@ export const escapeHtml = (value: string | number | null | undefined): string =>
     .replace(/'/g, "&#39;");
 };
 
+// JPY/XAU/BTC trade in whole units so 2 decimals is enough; FX majors need 5
+// to keep the pip-fraction (the "3" in 1.07543) visible.
+export const formatPriceForEmail = (
+  value: number | null | undefined,
+  pair?: string
+): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const upper = (pair || "").toUpperCase();
+  const decimals =
+    upper.includes("JPY") || upper.includes("XAU") || upper.includes("BTC")
+      ? 2
+      : 5;
+  return value.toFixed(decimals);
+};
+
 export const wrapEmail = (bodyHtml: string): string => `<!doctype html>
 <html lang="en">
   <head>
@@ -54,3 +69,21 @@ export const wrapEmail = (bodyHtml: string): string => `<!doctype html>
     </table>
   </body>
 </html>`;
+
+export const detailsTable = (
+  rows: Array<[string, string]>
+): string => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 24px;">
+    <tbody>
+      ${rows
+        .map(
+          ([label, value]) => `
+          <tr>
+            <td style="padding:8px 12px;color:#6b7280;width:40%;background:#f9fafb;border-radius:6px 0 0 6px;">${escapeHtml(label)}</td>
+            <td style="padding:8px 12px;font-weight:600;background:#f9fafb;border-radius:0 6px 6px 0;">${value}</td>
+          </tr>
+          <tr><td colspan="2" style="height:6px;line-height:6px;font-size:0;">&nbsp;</td></tr>`
+        )
+        .join("")}
+    </tbody>
+  </table>`;
