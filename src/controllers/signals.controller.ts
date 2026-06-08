@@ -9,6 +9,7 @@ import SignalAlertNotification, {
 } from "../models/signalAlertNotification.model";
 import { sendEmail } from "../services/email/email.service";
 import { deriveFirstName } from "../services/email/templates/_shared";
+import { newSignalEmail } from "../services/email/templates/newSignal";
 import { tp1HitEmail } from "../services/email/templates/tp1Hit";
 import { tp2HitEmail } from "../services/email/templates/tp2Hit";
 import { slHitEmail } from "../services/email/templates/slHit";
@@ -108,6 +109,8 @@ type AlertPayload = {
   pipsLoss?: number;
   reasoning?: string;
   evaluatedPrice?: number;
+  timeframe?: string;
+  riskLevel?: string;
 };
 
 function parseAlertPayload(body: unknown): AlertPayload {
@@ -118,6 +121,7 @@ function parseAlertPayload(body: unknown): AlertPayload {
 
   const alertType = b.alertType;
   if (
+    alertType !== "NEW_SIGNAL" &&
     alertType !== "TP1" &&
     alertType !== "TP2" &&
     alertType !== "SL" &&
@@ -169,6 +173,8 @@ function parseAlertPayload(body: unknown): AlertPayload {
     pipsLoss: optionalNumber("pipsLoss"),
     reasoning: typeof b.reasoning === "string" ? b.reasoning : undefined,
     evaluatedPrice: optionalNumber("evaluatedPrice"),
+    timeframe: typeof b.timeframe === "string" && b.timeframe.length > 0 ? b.timeframe : undefined,
+    riskLevel: typeof b.riskLevel === "string" && b.riskLevel.length > 0 ? b.riskLevel : undefined,
   };
 }
 
@@ -177,6 +183,19 @@ function buildAlertEmail(
   firstName: string,
 ): { subject: string; html: string } {
   switch (payload.alertType) {
+    case "NEW_SIGNAL":
+      return newSignalEmail({
+        firstName,
+        pair: payload.pair,
+        direction: payload.direction,
+        entryPrice: payload.entryPrice,
+        takeProfit1: payload.takeProfit1,
+        takeProfit2: payload.takeProfit2,
+        stopLoss: payload.stopLoss,
+        timeframe: payload.timeframe ?? "",
+        riskLevel: payload.riskLevel,
+        reasoning: payload.reasoning,
+      });
     case "TP1":
       return tp1HitEmail({
         firstName,
