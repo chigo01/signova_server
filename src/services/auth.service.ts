@@ -34,7 +34,7 @@ export class AuthService {
   ): Promise<void> {
     const normalized = email.trim().toLowerCase();
     const testBypass = this.isTestOtpEmail(normalized);
-    const lookupEmail = testBypass ? normalized : email.trim();
+    const lookupEmail = normalized;
     const otp = testBypass ? env.testOtpCode! : this.generateOTP();
     const otpExpiry = new Date(
       Date.now() + AUTH_CONSTANTS.OTP_EXPIRY_MINUTES * 60 * 1000
@@ -143,7 +143,7 @@ export class AuthService {
       };
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalized });
 
     if (
       !user ||
@@ -211,7 +211,8 @@ export class AuthService {
     proPlanExpiry?: Date;
     balanceUsdMicro: number;
   }> {
-    let user = await User.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+    let user = await User.findOne({ email: normalizedEmail });
 
     if (user) {
       if (!user.googleId) {
@@ -220,7 +221,7 @@ export class AuthService {
         await user.save();
       }
     } else {
-      user = await new User({ email, name, googleId }).save();
+      user = await new User({ email: normalizedEmail, name, googleId }).save();
     }
 
     await this.maybeSendWelcomeEmail(user);

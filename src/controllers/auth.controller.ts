@@ -37,6 +37,13 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
   if (!email) {
     throw new AppError(400, "Email is required");
   }
+  if (typeof email !== "string") {
+    throw new AppError(400, "Email must be a string");
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!PROFILE_CONSTANTS.EMAIL_REGEX.test(normalizedEmail)) {
+    throw new AppError(400, "Email must be a valid email address");
+  }
 
   let normalizedPhone: string | undefined;
   if (phone !== undefined && phone !== null && phone !== "") {
@@ -53,7 +60,7 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
     normalizedPhone = trimmed || undefined;
   }
 
-  await AuthService.sendOTP(email, name, normalizedPhone);
+  await AuthService.sendOTP(normalizedEmail, name, normalizedPhone);
 
   res.status(200).json({ message: "OTP sent successfully" });
 });
@@ -64,8 +71,11 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
   if (!email || !otp) {
     throw new AppError(400, "Email and OTP are required");
   }
+  if (typeof email !== "string") {
+    throw new AppError(400, "Email must be a string");
+  }
 
-  const user = await AuthService.verifyOTP(email, otp);
+  const user = await AuthService.verifyOTP(email.trim().toLowerCase(), otp);
 
   if (!user) {
     throw new AppError(400, "Invalid or expired OTP");

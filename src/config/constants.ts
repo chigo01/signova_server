@@ -23,6 +23,10 @@ export const PROFILE_CONSTANTS = {
   AVATAR_MAX_LENGTH: 700_000,
   AVATAR_DATA_URI_REGEX: /^data:image\/(png|jpeg|webp);base64,/,
   PHONE_E164_REGEX: /^\+[1-9]\d{1,14}$/,
+  // Pragmatic RFC-lite check: requires local@domain.tld with a 2+ char TLD.
+  // Blocks no-TLD typos (e.g. foo@gmail, foo@signova); cannot catch valid-shaped
+  // TLD typos like .con/.vom.
+  EMAIL_REGEX: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/,
 } as const;
 
 export const FCSAPI_CONSTANTS = {

@@ -8,11 +8,15 @@ import {
   updateProfile,
 } from "../controllers/auth.controller";
 import { verifyToken } from "../middleware/auth.middleware";
+import {
+  otpRequestLimiter,
+  otpVerifyLimiter,
+} from "../middleware/rateLimit.middleware";
 
 const router: Router = Router();
 
-router.post("/send-otp", sendOtp);
-router.post("/verify-otp", verifyOtp);
+router.post("/send-otp", otpRequestLimiter, sendOtp);
+router.post("/verify-otp", otpVerifyLimiter, verifyOtp);
 router.post("/google", googleLogin);
 router.post("/logout", logout);
 router.get("/check", verifyToken, checkAuth);
