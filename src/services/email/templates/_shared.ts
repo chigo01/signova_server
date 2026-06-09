@@ -1,6 +1,6 @@
 export const COMMUNITY_LINKS = {
-  telegram: "https://t.me/signova",
-  whatsapp: "https://wa.me/0",
+  telegram: "https://linktr.ee/signovaapp",
+  whatsapp: "https://linktr.ee/signovaapp",
   refer: "https://signova.app/refer",
 };
 
@@ -60,6 +60,7 @@ export const wrapEmail = (bodyHtml: string): string => `<!doctype html>
             <tr>
               <td style="padding-top:32px;border-top:1px solid #eef0f3;font-size:12px;color:#6b7280;">
                 Signova &middot; <a href="https://signova.app" style="color:#6b7280;text-decoration:none;">signova.app</a><br/>
+                Join our community: <a href="https://linktr.ee/signovaapp" style="color:#6b7280;text-decoration:none;">linktr.ee/signovaapp</a><br/>
                 You're receiving this because you're part of the Signova beta.
               </td>
             </tr>
