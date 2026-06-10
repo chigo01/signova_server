@@ -11,6 +11,11 @@ export interface SendEmailParams {
   from?: string;
 }
 
+// Throws when Resend rejects the send (rate limit, bad address, domain issue)
+// so callers can count real failures — silently swallowing here made the
+// signal-alert webhook report sent=42 even if every send had failed. Callers
+// that intentionally fire-and-forget (welcome email, blast script) already
+// wrap their calls in try/catch.
 export async function sendEmail({
   to,
   subject,
@@ -22,12 +27,9 @@ export async function sendEmail({
     return;
   }
 
-  try {
-    const { error } = await resend.emails.send({ from, to, subject, html });
-    if (error) {
-      console.error("Resend Error:", error);
-    }
-  } catch (emailError) {
-    console.error("Resend Error:", emailError);
+  const { error } = await resend.emails.send({ from, to, subject, html });
+  if (error) {
+    console.error("Resend Error:", error);
+    throw new Error(`Resend send failed: ${error.message ?? String(error)}`);
   }
 }
