@@ -19,7 +19,7 @@ export interface NewSignalEmailData {
 }
 
 export const newSignalEmail = (
-  data: NewSignalEmailData
+  data: NewSignalEmailData,
 ): { subject: string; html: string } => {
   const pair = escapeHtml(data.pair);
   const direction = escapeHtml(data.direction);
@@ -51,7 +51,7 @@ export const newSignalEmail = (
     </table>
 
     <p style="margin:0 0 16px;">
-      We'll message you when we hit TP1, if things get close to the stop loss, and when the
+      We'll message you when we hit TP1 and when the
       trade closes &mdash; whatever the outcome. Stay tuned.
     </p>
 
