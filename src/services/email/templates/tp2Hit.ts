@@ -47,8 +47,7 @@ export const tp2HitEmail = (
     </p>
 
     <p style="margin:0 0 24px;">
-      <a href="${COMMUNITY_LINKS.telegram}" style="color:#2563eb;text-decoration:none;font-weight:600;margin-right:16px;">Share on Telegram</a>
-      <a href="${COMMUNITY_LINKS.whatsapp}" style="color:#2563eb;text-decoration:none;font-weight:600;">Share on WhatsApp</a>
+      <a href="https://linktr.ee/signovaapp" style="color:#2563eb;text-decoration:none;font-weight:600;">linktr.ee/signovaapp</a>
     </p>
 
     <p style="margin:0 0 16px;">
