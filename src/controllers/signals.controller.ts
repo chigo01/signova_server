@@ -285,10 +285,17 @@ export const handleSignalAlert = asyncHandler(
       throw err;
     }
 
-    // Pull recipients. We dedupe by lowercased email and skip syntactically
-    // malformed addresses so we don't waste Resend calls on garbage rows.
+    // Pull recipients, filtered by notification preference. NEW_SIGNAL maps to
+    // the "newSignals" toggle; every TP/SL alert maps to "tradeAlerts". The
+    // { $ne: false } filter keeps users whose preference is missing (opted-in
+    // by default), so existing users need no migration. We dedupe by lowercased
+    // email and skip syntactically malformed addresses so we don't waste Resend
+    // calls on garbage rows.
+    const prefKey =
+      payload.alertType === "NEW_SIGNAL" ? "newSignals" : "tradeAlerts";
     const docs = await User.find({
       email: { $exists: true, $type: "string", $ne: "" },
+      [`notificationPreferences.${prefKey}`]: { $ne: false },
     })
       .select("email name")
       .lean();

@@ -8,6 +8,11 @@ export interface IUser extends Document {
   role?: string;
   avatarDataUrl?: string;
   tradeReversalEnabled: boolean;
+  notificationPreferences?: {
+    newSignals: boolean;
+    tradeAlerts: boolean;
+    newsletter: boolean;
+  };
   googleId?: string;
   otp?: string;
   otpExpiry?: Date;
@@ -33,6 +38,11 @@ const UserSchema: Schema = new Schema(
     role: { type: String, maxlength: 60 },
     avatarDataUrl: { type: String },
     tradeReversalEnabled: { type: Boolean, default: true },
+    notificationPreferences: {
+      newSignals: { type: Boolean, default: true },
+      tradeAlerts: { type: Boolean, default: true },
+      newsletter: { type: Boolean, default: true },
+    },
     googleId: { type: String, sparse: true },
     otp: { type: String },
     otpExpiry: { type: Date },

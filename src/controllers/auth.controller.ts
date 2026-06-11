@@ -5,6 +5,15 @@ import { AppError } from "../middleware/errorHandler";
 import User from "../models/user.model";
 import { PROFILE_CONSTANTS } from "../config/constants";
 
+// Notification preference categories. Each maps to a set of emails the user can
+// opt out of; transactional mail (OTP, welcome) is intentionally not included.
+const NOTIFICATION_PREFERENCE_KEYS = [
+  "newSignals",
+  "tradeAlerts",
+  "newsletter",
+] as const;
+type NotificationPreferenceKey = (typeof NOTIFICATION_PREFERENCE_KEYS)[number];
+
 function serializeUser(user: {
   email: string;
   name?: string;
@@ -13,10 +22,12 @@ function serializeUser(user: {
   role?: string;
   avatarDataUrl?: string;
   tradeReversalEnabled?: boolean;
+  notificationPreferences?: Partial<Record<NotificationPreferenceKey, boolean>>;
   plan?: "free" | "pro";
   proPlanExpiry?: Date;
   balanceUsdMicro?: number;
 }) {
+  const prefs = user.notificationPreferences ?? {};
   return {
     email: user.email,
     name: user.name,
@@ -25,6 +36,11 @@ function serializeUser(user: {
     role: user.role,
     avatarDataUrl: user.avatarDataUrl,
     tradeReversalEnabled: user.tradeReversalEnabled ?? true,
+    notificationPreferences: {
+      newSignals: prefs.newSignals ?? true,
+      tradeAlerts: prefs.tradeAlerts ?? true,
+      newsletter: prefs.newsletter ?? true,
+    },
     plan: user.plan ?? "free",
     proPlanExpiry: user.proPlanExpiry,
     balanceUsdMicro: user.balanceUsdMicro ?? 0,
@@ -144,14 +160,21 @@ export const updateProfile = asyncHandler(
       throw new AppError(401, "Unauthorized");
     }
 
-    const { name, username, role, avatarDataUrl, tradeReversalEnabled } =
-      req.body as {
-        name?: unknown;
-        username?: unknown;
-        role?: unknown;
-        avatarDataUrl?: unknown;
-        tradeReversalEnabled?: unknown;
-      };
+    const {
+      name,
+      username,
+      role,
+      avatarDataUrl,
+      tradeReversalEnabled,
+      notificationPreferences,
+    } = req.body as {
+      name?: unknown;
+      username?: unknown;
+      role?: unknown;
+      avatarDataUrl?: unknown;
+      tradeReversalEnabled?: unknown;
+      notificationPreferences?: unknown;
+    };
 
     const updates: Record<string, unknown> = {};
 
@@ -227,6 +250,40 @@ export const updateProfile = asyncHandler(
         throw new AppError(400, "tradeReversalEnabled must be a boolean");
       }
       updates.tradeReversalEnabled = tradeReversalEnabled;
+    }
+
+    if (notificationPreferences !== undefined) {
+      if (
+        typeof notificationPreferences !== "object" ||
+        notificationPreferences === null ||
+        Array.isArray(notificationPreferences)
+      ) {
+        throw new AppError(
+          400,
+          "notificationPreferences must be an object"
+        );
+      }
+      // Apply each provided key with dot notation so a partial PATCH does not
+      // clobber the other preference keys already stored on the user.
+      for (const [key, value] of Object.entries(notificationPreferences)) {
+        if (
+          !NOTIFICATION_PREFERENCE_KEYS.includes(
+            key as NotificationPreferenceKey
+          )
+        ) {
+          throw new AppError(
+            400,
+            `Unknown notification preference: ${key}`
+          );
+        }
+        if (typeof value !== "boolean") {
+          throw new AppError(
+            400,
+            `notificationPreferences.${key} must be a boolean`
+          );
+        }
+        updates[`notificationPreferences.${key}`] = value;
+      }
     }
 
     if (Object.keys(updates).length === 0) {
