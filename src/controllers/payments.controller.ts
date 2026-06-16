@@ -15,6 +15,7 @@ import {
   SubscriptionService,
 } from "../services/subscription.service";
 import { PLANS, isPlanId } from "../config/plans";
+import { ReferralService } from "../services/referral.service";
 import { env } from "../config/env";
 
 const PAYMENT_EXPIRY_MS = 60 * 60 * 1000;
@@ -31,6 +32,9 @@ async function applySuccessfulPayment(transaction: ITransaction): Promise<void> 
     String(transaction.userId),
     months,
   );
+  // Recurring referral commission: credits the referrer (if any) once per
+  // payment. Idempotent and self-contained — never throws into this path.
+  await ReferralService.creditReferralForPayment(transaction);
 }
 
 function ensureAuthenticatedUser(req: Request): string {

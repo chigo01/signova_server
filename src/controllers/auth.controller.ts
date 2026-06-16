@@ -48,7 +48,7 @@ function serializeUser(user: {
 }
 
 export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
-  const { email, name, phone } = req.body;
+  const { email, name, phone, referralCode } = req.body;
 
   if (!email) {
     throw new AppError(400, "Email is required");
@@ -76,7 +76,15 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
     normalizedPhone = trimmed || undefined;
   }
 
-  await AuthService.sendOTP(normalizedEmail, name, normalizedPhone);
+  const normalizedReferralCode =
+    typeof referralCode === "string" ? referralCode.trim() : undefined;
+
+  await AuthService.sendOTP(
+    normalizedEmail,
+    name,
+    normalizedPhone,
+    normalizedReferralCode
+  );
 
   res.status(200).json({ message: "OTP sent successfully" });
 });
@@ -110,17 +118,21 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
 
 export const googleLogin = asyncHandler(
   async (req: Request, res: Response) => {
-    const { access_token } = req.body;
+    const { access_token, referralCode } = req.body;
 
     if (!access_token) {
       throw new AppError(400, "Google access token is required");
     }
 
+    const normalizedReferralCode =
+      typeof referralCode === "string" ? referralCode.trim() : undefined;
+
     const googleUser = await AuthService.verifyGoogleToken(access_token);
     const user = await AuthService.findOrCreateGoogleUser(
       googleUser.email,
       googleUser.name,
-      googleUser.googleId
+      googleUser.googleId,
+      normalizedReferralCode
     );
 
     const token = AuthService.generateToken(user._id, user.email);

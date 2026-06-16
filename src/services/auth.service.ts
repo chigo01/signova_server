@@ -5,6 +5,7 @@ import { AUTH_CONSTANTS } from "../config/constants";
 import { sendEmail } from "./email/email.service";
 import { welcomeEmail } from "./email/templates/welcome";
 import { deriveFirstName } from "./email/templates/_shared";
+import { ReferralService } from "./referral.service";
 
 export class AuthService {
   private static isTestOtpEmail(normalizedEmail: string): boolean {
@@ -30,7 +31,8 @@ export class AuthService {
   static async sendOTP(
     email: string,
     name?: string,
-    phone?: string
+    phone?: string,
+    referralCode?: string
   ): Promise<void> {
     const normalized = email.trim().toLowerCase();
     const testBypass = this.isTestOtpEmail(normalized);
@@ -42,8 +44,17 @@ export class AuthService {
 
     // Find or create user and update OTP
     let user = await User.findOne({ email: lookupEmail });
+    const isNewUser = !user;
     if (!user) {
-      user = new User({ email: lookupEmail, name, phone, otp, otpExpiry });
+      const code = await ReferralService.generateReferralCode();
+      user = new User({
+        email: lookupEmail,
+        name,
+        phone,
+        otp,
+        otpExpiry,
+        referralCode: code,
+      });
     } else {
       user.otp = otp;
       user.otpExpiry = otpExpiry;
@@ -51,6 +62,11 @@ export class AuthService {
       if (phone) user.phone = phone;
     }
     await user.save();
+
+    // Link the new user to their referrer (no-op for unknown/invalid codes).
+    if (isNewUser) {
+      await ReferralService.attachReferrer(user, referralCode);
+    }
 
     if (testBypass) {
       console.log(`[TEST OTP] Fixed OTP for ${lookupEmail} (email not sent)`);
@@ -92,6 +108,9 @@ export class AuthService {
       console.error("Welcome email: failed to persist welcomedAt", saveErr);
       return;
     }
+
+    // First verified login: award the referrer their signup bonus exactly once.
+    await ReferralService.creditReferralSignup(user);
 
     try {
       const { subject, html } = welcomeEmail({
@@ -201,7 +220,8 @@ export class AuthService {
   static async findOrCreateGoogleUser(
     email: string,
     name: string,
-    googleId: string
+    googleId: string,
+    referralCode?: string
   ): Promise<{
     _id: any;
     email: string;
@@ -221,7 +241,14 @@ export class AuthService {
         await user.save();
       }
     } else {
-      user = await new User({ email: normalizedEmail, name, googleId }).save();
+      const code = await ReferralService.generateReferralCode();
+      user = await new User({
+        email: normalizedEmail,
+        name,
+        googleId,
+        referralCode: code,
+      }).save();
+      await ReferralService.attachReferrer(user, referralCode);
     }
 
     await this.maybeSendWelcomeEmail(user);

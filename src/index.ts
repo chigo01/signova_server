@@ -17,6 +17,7 @@ import paystackWebhookRoutes from "./routes/paystack-webhook.routes";
 import tvRoutes from "./routes/tv.routes";
 import analysisRoutes from "./routes/analysis.routes";
 import journalRoutes from "./routes/journal.routes";
+import referralRoutes from "./routes/referral.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -58,6 +59,7 @@ app.use("/payments", paymentsRoutes);
 app.use("/tv", tvRoutes);
 app.use("/analysis", analysisRoutes);
 app.use("/journal", journalRoutes);
+app.use("/referrals", referralRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({ message: "Welcome to the Signova API!" });
