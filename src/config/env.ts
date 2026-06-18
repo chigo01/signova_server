@@ -27,6 +27,8 @@ interface EnvConfig {
   FRONTEND_URL: string;
   FRONTEND_URLS: string[];
   ADMIN_SERVER_URL: string;
+  /** Lowercased emails allowed to access the affiliate admin endpoints. */
+  ADMIN_EMAILS: string[];
   SIGNALS_INVALIDATE_SECRET?: string;
   SIGNALS_ALERT_SECRET?: string;
   RESEND_API_KEY?: string;
@@ -138,6 +140,10 @@ function validateEnv(): EnvConfig {
       .filter(Boolean),
     ADMIN_SERVER_URL:
       process.env.ADMIN_SERVER_URL || "http://localhost:8000",
+    ADMIN_EMAILS: (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
     SIGNALS_INVALIDATE_SECRET: process.env.SIGNALS_INVALIDATE_SECRET,
     SIGNALS_ALERT_SECRET: process.env.SIGNALS_ALERT_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,

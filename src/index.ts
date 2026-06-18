@@ -18,6 +18,7 @@ import tvRoutes from "./routes/tv.routes";
 import analysisRoutes from "./routes/analysis.routes";
 import journalRoutes from "./routes/journal.routes";
 import referralRoutes from "./routes/referral.routes";
+import adminRoutes from "./routes/admin.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -60,6 +61,7 @@ app.use("/tv", tvRoutes);
 app.use("/analysis", analysisRoutes);
 app.use("/journal", journalRoutes);
 app.use("/referrals", referralRoutes);
+app.use("/admin", adminRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({ message: "Welcome to the Signova API!" });

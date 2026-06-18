@@ -2,15 +2,15 @@ import mongoose from "mongoose";
 import User, { IUser } from "../models/user.model";
 import ReferralEarning from "../models/referral-earning.model";
 import SigcoinLedger from "../models/sigcoin-ledger.model";
+import AffiliatePayout from "../models/affiliate-payout.model";
 import { ITransaction } from "../models/transaction.model";
-import { PLANS, isPlanId } from "../config/plans";
 import { env } from "../config/env";
 import {
   REFERRAL_CODE_ALPHABET,
   REFERRAL_CODE_LENGTH,
-  REFERRAL_COMMISSION_RATE,
-  SIGCOINS_PER_PAYMENT,
-  SIGCOINS_PER_VERIFIED_SIGNUP,
+  SIGCOINS_PER_SUBSCRIBED_REFERRAL,
+  SIGCOIN_RATE_USD_DEFAULT,
+  earnedUsdMicro,
 } from "../config/referral";
 
 export interface ReferralOverview {
@@ -42,6 +42,8 @@ export interface ReferralTransactionRow {
 export interface LeaderboardEntry {
   rank: number;
   name: string;
+  // SIGcoins earned (subscribed referrals) — the leaderboard ranks by this.
+  sigcoins: number;
   totalEarningsUsdMicro: number;
   isCurrentUser: boolean;
 }
@@ -111,72 +113,55 @@ export class ReferralService {
   }
 
   /**
-   * Award the referrer their signup bonus the first time a referred user is
-   * verified. Guarded so it runs at most once per referred user.
+   * No-op in the current model. SIGcoins are only earned when a referral
+   * becomes a paying subscriber (see creditReferralForPayment), not on signup.
+   * Kept so the once-per-user welcome gate call site stays valid.
    */
-  static async creditReferralSignup(referredUser: IUser): Promise<void> {
-    if (!referredUser.referredBy) return;
-    try {
-      await this.awardSigcoins(
-        referredUser.referredBy,
-        SIGCOINS_PER_VERIFIED_SIGNUP,
-        "referral_signup",
-        referredUser._id as mongoose.Types.ObjectId,
-      );
-    } catch (err) {
-      // Referral accounting must never break the auth flow.
-      console.error("creditReferralSignup failed", err);
-    }
+  static async creditReferralSignup(_referredUser: IUser): Promise<void> {
+    return;
   }
 
   /**
-   * Credit the referrer when a referred user's subscription payment succeeds.
-   * Recurring: runs on every successful payment. Idempotent via the unique
-   * `sourceTransactionId` index on ReferralEarning. Never throws.
+   * Credit the referrer when a referred user becomes a paying subscriber.
+   * Model: 1 subscribed referral = 1 SIGcoin. Awarded at most once per referred
+   * user (the first successful payment), guarded by `subscribedReferralCredited`
+   * on the referred user. Never throws.
    */
   static async creditReferralForPayment(
     transaction: ITransaction,
   ): Promise<void> {
+    await this.creditSubscribedReferral(transaction.userId);
+  }
+
+  /**
+   * Award a referrer 1 SIGcoin the first time their referral subscribes. Safe
+   * to call from any subscription path (Paystack, crypto). Idempotent per
+   * referred user via the `subscribedReferralCredited` flag. Never throws.
+   */
+  static async creditSubscribedReferral(
+    referredUserId: mongoose.Types.ObjectId | string,
+  ): Promise<void> {
     try {
-      const referredUser = await User.findById(transaction.userId);
+      const referredUser = await User.findById(referredUserId);
       if (!referredUser || !referredUser.referredBy) return;
-      if (!isPlanId(transaction.planId)) return;
+      if (referredUser.subscribedReferralCredited) return; // already counted
 
-      const plan = PLANS[transaction.planId];
-      const amountUsdMicro = Math.round(
-        plan.displayUsd * 1_000_000 * REFERRAL_COMMISSION_RATE,
+      // Atomically claim the credit so concurrent payments can't double-award.
+      const claimed = await User.findOneAndUpdate(
+        { _id: referredUser._id, subscribedReferralCredited: { $ne: true } },
+        { $set: { subscribedReferralCredited: true } },
+        { new: true },
       );
-
-      // Idempotency: insert first; a duplicate key means it was already credited.
-      try {
-        await ReferralEarning.create({
-          referrerId: referredUser.referredBy,
-          referredUserId: referredUser._id,
-          sourceTransactionId: transaction._id,
-          planId: transaction.planId,
-          amountUsdMicro,
-          sigcoinsAwarded: SIGCOINS_PER_PAYMENT,
-          status: "pending",
-        });
-      } catch (err: unknown) {
-        const e = err as { code?: number };
-        if (e.code === 11000) return; // already credited for this transaction
-        throw err;
-      }
-
-      await User.updateOne(
-        { _id: referredUser.referredBy },
-        { $inc: { referralPendingUsdMicro: amountUsdMicro } },
-      );
+      if (!claimed) return; // another call already claimed it
 
       await this.awardSigcoins(
         referredUser.referredBy as mongoose.Types.ObjectId,
-        SIGCOINS_PER_PAYMENT,
-        "referral_payment",
-        transaction._id as mongoose.Types.ObjectId,
+        SIGCOINS_PER_SUBSCRIBED_REFERRAL,
+        "referral_subscription",
+        referredUser._id as mongoose.Types.ObjectId,
       );
     } catch (err) {
-      console.error("creditReferralForPayment failed", err);
+      console.error("creditSubscribedReferral failed", err);
     }
   }
 
@@ -184,7 +169,7 @@ export class ReferralService {
   private static async awardSigcoins(
     userId: mongoose.Types.ObjectId,
     delta: number,
-    reason: "referral_signup" | "referral_payment",
+    reason: "referral_subscription",
     refId?: mongoose.Types.ObjectId,
   ): Promise<void> {
     const updated = await User.findByIdAndUpdate(
@@ -202,24 +187,36 @@ export class ReferralService {
     });
   }
 
+  /** Total USD micro this affiliate has been paid out via recorded payouts. */
+  static async paidOutUsdMicro(userId: mongoose.Types.ObjectId | string): Promise<number> {
+    const agg = await AffiliatePayout.aggregate([
+      { $match: { affiliateId: new mongoose.Types.ObjectId(String(userId)) } },
+      { $group: { _id: null, total: { $sum: "$amountUsdMicro" } } },
+    ]);
+    return agg[0]?.total ?? 0;
+  }
+
   static async getOverview(user: IUser): Promise<ReferralOverview> {
     const code = await this.ensureReferralCode(user);
     const totalReferrals = await User.countDocuments({ referredBy: user._id });
     const leaderboardRank = await this.getRank(user);
 
+    const earned = earnedUsdMicro(user.sigcoins, user.sigcoinRateUsd);
+    const paidOut = await this.paidOutUsdMicro(user._id as mongoose.Types.ObjectId);
+    const owed = Math.max(0, earned - paidOut);
+
     return {
       code,
       shareUrl: `${env.FRONTEND_URL.replace(/\/$/, "")}/register?ref=${code}`,
       stats: {
-        totalEarningsUsdMicro:
-          user.referralBalanceUsdMicro + user.referralPendingUsdMicro,
+        totalEarningsUsdMicro: earned,
         totalReferrals,
         sigcoins: user.sigcoins,
         leaderboardRank,
       },
       wallet: {
-        balanceUsdMicro: user.referralBalanceUsdMicro,
-        pendingUsdMicro: user.referralPendingUsdMicro,
+        balanceUsdMicro: owed,
+        pendingUsdMicro: 0,
       },
     };
   }
@@ -252,25 +249,27 @@ export class ReferralService {
     });
   }
 
-  /** Rank users by lifetime referral earnings (balance + pending). */
+  /** Rank affiliates by SIGcoins earned (subscribed referrals). */
   private static async leaderboardAgg(): Promise<
-    { _id: mongoose.Types.ObjectId; name?: string; email?: string; total: number }[]
+    {
+      _id: mongoose.Types.ObjectId;
+      name?: string;
+      email?: string;
+      sigcoins: number;
+      rate: number;
+    }[]
   > {
     return User.aggregate([
       {
         $project: {
           name: 1,
           email: 1,
-          total: {
-            $add: [
-              { $ifNull: ["$referralBalanceUsdMicro", 0] },
-              { $ifNull: ["$referralPendingUsdMicro", 0] },
-            ],
-          },
+          sigcoins: { $ifNull: ["$sigcoins", 0] },
+          rate: { $ifNull: ["$sigcoinRateUsd", SIGCOIN_RATE_USD_DEFAULT] },
         },
       },
-      { $match: { total: { $gt: 0 } } },
-      { $sort: { total: -1, _id: 1 } },
+      { $match: { sigcoins: { $gt: 0 } } },
+      { $sort: { sigcoins: -1, _id: 1 } },
     ]);
   }
 
@@ -283,7 +282,8 @@ export class ReferralService {
       .map((r, i) => ({
         rank: i + 1,
         name: displayName(r),
-        totalEarningsUsdMicro: r.total,
+        sigcoins: r.sigcoins,
+        totalEarningsUsdMicro: earnedUsdMicro(r.sigcoins, r.rate),
         isCurrentUser: String(r._id) === String(user._id),
       }));
 
@@ -294,24 +294,12 @@ export class ReferralService {
   }
 
   private static async getRank(user: IUser): Promise<number | null> {
-    const myTotal =
-      user.referralBalanceUsdMicro + user.referralPendingUsdMicro;
-    if (myTotal <= 0) return null;
-    // Rank = (number of users strictly ahead) + 1.
-    const ahead = await User.aggregate([
-      {
-        $project: {
-          total: {
-            $add: [
-              { $ifNull: ["$referralBalanceUsdMicro", 0] },
-              { $ifNull: ["$referralPendingUsdMicro", 0] },
-            ],
-          },
-        },
-      },
-      { $match: { total: { $gt: myTotal } } },
-      { $count: "count" },
-    ]);
-    return (ahead[0]?.count ?? 0) + 1;
+    const mySigcoins = user.sigcoins ?? 0;
+    if (mySigcoins <= 0) return null;
+    // Rank = (number of affiliates with strictly more SIGcoins) + 1.
+    const ahead = await User.countDocuments({
+      sigcoins: { $gt: mySigcoins },
+    });
+    return ahead + 1;
   }
 }

@@ -3,6 +3,7 @@ import User from "../models/user.model";
 import { env } from "../config/env";
 import { DextopusDepositStatusResponse, DextopusService } from "./dextopus.service";
 import { PRO_PLAN_AMOUNT_USD_MICRO, SubscriptionService } from "./subscription.service";
+import { ReferralService } from "./referral.service";
 
 function normalizeStatus(input?: string): string {
   return String(input || "").trim().toLowerCase();
@@ -221,6 +222,10 @@ export class DextopusDepositSyncService {
 
       if (upgradedDeposit) {
         await SubscriptionService.activateOrExtendPro(String(upgradedDeposit.userId));
+        // Credit the referrer (if any) — 1 SIGcoin on first subscription.
+        await ReferralService.creditSubscribedReferral(
+          String(upgradedDeposit.userId),
+        );
         finalizedDeposit = upgradedDeposit;
       }
     }

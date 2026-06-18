@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { SIGCOIN_RATE_USD_DEFAULT } from "../config/referral";
 
 export interface IUser extends Document {
   email: string;
@@ -25,7 +26,14 @@ export interface IUser extends Document {
   referredBy?: mongoose.Types.ObjectId;
   referralBalanceUsdMicro: number;
   referralPendingUsdMicro: number;
+  // Count of this user's referrals who have become paying subscribers. In the
+  // current model, 1 subscribed referral = 1 SIGcoin (see referral.service.ts).
   sigcoins: number;
+  // Admin-controlled USD rate paid per SIGcoin for this affiliate ($2–$5).
+  sigcoinRateUsd: number;
+  // Idempotency flag (set on the *referred* user) so their referrer is credited
+  // at most one SIGcoin — the first time this user pays for a subscription.
+  subscribedReferralCredited?: boolean;
   welcomedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -66,6 +74,8 @@ const UserSchema: Schema = new Schema(
     referralBalanceUsdMicro: { type: Number, default: 0 },
     referralPendingUsdMicro: { type: Number, default: 0 },
     sigcoins: { type: Number, default: 0 },
+    sigcoinRateUsd: { type: Number, default: SIGCOIN_RATE_USD_DEFAULT },
+    subscribedReferralCredited: { type: Boolean, default: false },
     welcomedAt: { type: Date, default: null },
   },
   { timestamps: true }

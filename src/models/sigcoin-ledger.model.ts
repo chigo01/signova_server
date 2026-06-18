@@ -3,8 +3,9 @@ import mongoose, { Document, Schema } from "mongoose";
 // Append-only ledger for the SIGcoin economy. Every earn (+) or spend (-) is a
 // row; the denormalized `user.sigcoins` balance is kept in sync alongside it.
 export type SigcoinReason =
-  | "referral_signup"
-  | "referral_payment"
+  | "referral_subscription" // current model: +1 when a referral first subscribes
+  | "referral_signup" // legacy
+  | "referral_payment" // legacy
   | "redemption"
   | "adjustment";
 
@@ -29,7 +30,13 @@ const SigcoinLedgerSchema: Schema = new Schema(
     delta: { type: Number, required: true },
     reason: {
       type: String,
-      enum: ["referral_signup", "referral_payment", "redemption", "adjustment"],
+      enum: [
+        "referral_subscription",
+        "referral_signup",
+        "referral_payment",
+        "redemption",
+        "adjustment",
+      ],
       required: true,
     },
     refId: { type: Schema.Types.ObjectId },
