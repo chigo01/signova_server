@@ -103,6 +103,26 @@ export const deleteStudyTemplate = asyncHandler(
   },
 );
 
+export const getDefaultStudyTemplate = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const template = await ChartPresetService.getDefaultStudyTemplate(userId);
+    res.status(200).json({ success: true, default: template });
+  },
+);
+
+export const setDefaultStudyTemplate = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    const name = req.body?.name;
+    if (typeof name !== "string" || !name) {
+      throw new AppError(400, "name is required");
+    }
+    await ChartPresetService.setDefaultStudyTemplate(userId, name);
+    res.status(200).json({ success: true });
+  },
+);
+
 // ----- Drawing templates -----
 
 export const listDrawingTemplates = asyncHandler(

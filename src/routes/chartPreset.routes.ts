@@ -6,6 +6,7 @@ import {
   deleteStudyTemplate,
   getChartLayout,
   getChartTemplate,
+  getDefaultStudyTemplate,
   getDrawingTemplate,
   getStudyTemplate,
   listChartLayouts,
@@ -16,6 +17,7 @@ import {
   saveChartTemplate,
   saveDrawingTemplate,
   saveStudyTemplate,
+  setDefaultStudyTemplate,
 } from "../controllers/chartPreset.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 
@@ -30,6 +32,8 @@ router.delete("/layouts/:id", verifyToken, deleteChartLayout);
 // Study templates (indicator sets)
 router.get("/study-templates", verifyToken, listStudyTemplates);
 router.post("/study-templates", verifyToken, saveStudyTemplate);
+router.get("/study-templates/default", verifyToken, getDefaultStudyTemplate);
+router.patch("/study-templates/default", verifyToken, setDefaultStudyTemplate);
 router.get("/study-templates/content", verifyToken, getStudyTemplate);
 router.delete("/study-templates", verifyToken, deleteStudyTemplate);
 

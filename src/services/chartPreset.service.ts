@@ -103,14 +103,53 @@ export class ChartPresetService {
 
   // ----- Study templates -----
 
-  static async listStudyTemplates(userId: string): Promise<{ name: string }[]> {
+  static async listStudyTemplates(
+    userId: string,
+  ): Promise<{ name: string; isDefault: boolean }[]> {
     const docs = await StudyTemplate.find({
       userId: toObjectId(userId, "userId"),
     })
       .sort({ name: 1 })
       .lean();
 
-    return docs.map((doc) => ({ name: doc.name }));
+    return docs.map((doc) => ({
+      name: doc.name,
+      isDefault: Boolean(doc.isDefault),
+    }));
+  }
+
+  static async setDefaultStudyTemplate(
+    userId: string,
+    name: string,
+  ): Promise<void> {
+    if (!name) throw new AppError(400, "name is required");
+    const owner = toObjectId(userId, "userId");
+
+    const exists = await StudyTemplate.exists({ userId: owner, name });
+    if (!exists) throw new AppError(404, "Study template not found");
+
+    // Clear the current default first so the partial-unique index never sees
+    // two defaults, then promote the chosen template.
+    await StudyTemplate.updateMany(
+      { userId: owner, isDefault: true },
+      { $set: { isDefault: false } },
+    );
+    await StudyTemplate.updateOne(
+      { userId: owner, name },
+      { $set: { isDefault: true } },
+    );
+  }
+
+  static async getDefaultStudyTemplate(
+    userId: string,
+  ): Promise<{ name: string; content: string } | null> {
+    const doc = await StudyTemplate.findOne({
+      userId: toObjectId(userId, "userId"),
+      isDefault: true,
+    }).lean();
+
+    if (!doc) return null;
+    return { name: doc.name, content: doc.content };
   }
 
   static async saveStudyTemplate(
