@@ -17,6 +17,7 @@ import paystackWebhookRoutes from "./routes/paystack-webhook.routes";
 import tvRoutes from "./routes/tv.routes";
 import analysisRoutes from "./routes/analysis.routes";
 import journalRoutes from "./routes/journal.routes";
+import chartPresetRoutes from "./routes/chartPreset.routes";
 import referralRoutes from "./routes/referral.routes";
 import adminRoutes from "./routes/admin.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
@@ -60,6 +61,7 @@ app.use("/payments", paymentsRoutes);
 app.use("/tv", tvRoutes);
 app.use("/analysis", analysisRoutes);
 app.use("/journal", journalRoutes);
+app.use("/chart-presets", chartPresetRoutes);
 app.use("/referrals", referralRoutes);
 app.use("/admin", adminRoutes);
 
