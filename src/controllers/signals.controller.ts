@@ -14,6 +14,8 @@ import { tp1HitEmail } from "../services/email/templates/tp1Hit";
 import { tp2HitEmail } from "../services/email/templates/tp2Hit";
 import { slHitEmail } from "../services/email/templates/slHit";
 import { slApproachingEmail } from "../services/email/templates/slApproaching";
+import { signalAdjustedEmail } from "../services/email/templates/signalAdjusted";
+import { createHash } from "crypto";
 
 export const getApprovedSignals = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -111,6 +113,12 @@ type AlertPayload = {
   evaluatedPrice?: number;
   timeframe?: string;
   riskLevel?: string;
+  // SIGNAL_ADJUSTED only
+  previousEntryPrice?: number;
+  previousTakeProfit1?: number;
+  previousTakeProfit2?: number;
+  previousStopLoss?: number;
+  alertKey?: string;
 };
 
 function parseAlertPayload(body: unknown): AlertPayload {
@@ -125,7 +133,8 @@ function parseAlertPayload(body: unknown): AlertPayload {
     alertType !== "TP1" &&
     alertType !== "TP2" &&
     alertType !== "SL" &&
-    alertType !== "SL_WARNING"
+    alertType !== "SL_WARNING" &&
+    alertType !== "SIGNAL_ADJUSTED"
   ) {
     throw new AppError(400, "Invalid alertType");
   }
@@ -175,7 +184,29 @@ function parseAlertPayload(body: unknown): AlertPayload {
     evaluatedPrice: optionalNumber("evaluatedPrice"),
     timeframe: typeof b.timeframe === "string" && b.timeframe.length > 0 ? b.timeframe : undefined,
     riskLevel: typeof b.riskLevel === "string" && b.riskLevel.length > 0 ? b.riskLevel : undefined,
+    previousEntryPrice: optionalNumber("previousEntryPrice"),
+    previousTakeProfit1: optionalNumber("previousTakeProfit1"),
+    previousTakeProfit2: optionalNumber("previousTakeProfit2"),
+    previousStopLoss: optionalNumber("previousStopLoss"),
+    alertKey:
+      typeof b.alertKey === "string" && b.alertKey.length > 0
+        ? b.alertKey
+        : undefined,
   };
+}
+
+// Fallback dedup token when admin-server didn't supply alertKey: hash the new
+// parameter values so identical adjustments collapse and real changes don't.
+function hashAdjustment(payload: AlertPayload): string {
+  const basis = [
+    payload.entryPrice,
+    payload.stopLoss,
+    payload.takeProfit1,
+    payload.takeProfit2,
+  ]
+    .map((n) => (Number.isFinite(n) ? n : "x"))
+    .join("|");
+  return createHash("sha1").update(basis).digest("hex").slice(0, 16);
 }
 
 function buildAlertEmail(
@@ -230,6 +261,21 @@ function buildAlertEmail(
         pipsLoss: payload.pipsLoss,
         explanation: payload.reasoning,
       });
+    case "SIGNAL_ADJUSTED":
+      return signalAdjustedEmail({
+        firstName,
+        pair: payload.pair,
+        direction: payload.direction,
+        timeframe: payload.timeframe,
+        entryPrice: payload.entryPrice,
+        takeProfit1: payload.takeProfit1,
+        takeProfit2: payload.takeProfit2,
+        stopLoss: payload.stopLoss,
+        previousEntryPrice: payload.previousEntryPrice,
+        previousTakeProfit1: payload.previousTakeProfit1,
+        previousTakeProfit2: payload.previousTakeProfit2,
+        previousStopLoss: payload.previousStopLoss,
+      });
   }
 }
 
@@ -266,10 +312,20 @@ export const handleSignalAlert = asyncHandler(
     // processed — return early without sending. This is what makes the
     // "once it hits TP2, emails stop" / "once it hits SL, emails stop"
     // requirement bulletproof even under webhook retries.
+    // For SIGNAL_ADJUSTED a single signal can be adjusted many times, so the
+    // (signalId, alertType) tuple must vary per adjustment. We append the
+    // content-hash alertKey (from admin-server, or recomputed here as a
+    // fallback) to the signalId. This keeps the existing unique index intact —
+    // no migration — while still collapsing retries of the same adjustment.
+    const dedupSignalId =
+      payload.alertType === "SIGNAL_ADJUSTED"
+        ? `${payload.signalId}#${payload.alertKey ?? hashAdjustment(payload)}`
+        : payload.signalId;
+
     let notificationId: string;
     try {
       const created = await SignalAlertNotification.create({
-        signalId: payload.signalId,
+        signalId: dedupSignalId,
         alertType: payload.alertType,
       });
       notificationId = String(created._id);

@@ -1,6 +1,12 @@
 import mongoose, { Document, Schema } from "mongoose";
 
-export type SignalAlertType = "NEW_SIGNAL" | "TP1" | "TP2" | "SL" | "SL_WARNING";
+export type SignalAlertType =
+  | "NEW_SIGNAL"
+  | "TP1"
+  | "TP2"
+  | "SL"
+  | "SL_WARNING"
+  | "SIGNAL_ADJUSTED";
 
 export interface ISignalAlertNotification extends Document {
   signalId: string;
@@ -16,7 +22,7 @@ const SignalAlertNotificationSchema: Schema = new Schema(
     signalId: { type: String, required: true },
     alertType: {
       type: String,
-      enum: ["NEW_SIGNAL", "TP1", "TP2", "SL", "SL_WARNING"],
+      enum: ["NEW_SIGNAL", "TP1", "TP2", "SL", "SL_WARNING", "SIGNAL_ADJUSTED"],
       required: true,
     },
     sentAt: { type: Date, default: Date.now },
