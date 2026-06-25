@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { getRecommendations, getTopNews } from "../controllers/stocks.controller";
-import { verifyToken } from "../middleware/auth.middleware";
 
 const router: Router = Router();
 
-router.get("/recommendations", verifyToken, getRecommendations);
-router.get("/news", verifyToken, getTopNews);
+// Public market-data endpoints — global recommendations/news (no user-specific
+// data), so guests can browse the stocks teaser without authenticating. The
+// stock *detail* payoff is still gated client-side in the webapp.
+router.get("/recommendations", getRecommendations);
+router.get("/news", getTopNews);
 
 export default router;
