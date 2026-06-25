@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   getApprovedSignals,
+  getApprovedSignalsPublic,
   playSignal,
   getSignalHistory,
   getApprovedSignalsWinRate,
@@ -13,6 +14,8 @@ import { verifyToken } from "../middleware/auth.middleware";
 const router: Router = Router();
 
 router.get("/approved", verifyToken, getApprovedSignals);
+// Public guest view: pair + direction only, no auth (numbers stripped server-side)
+router.get("/approved/public", getApprovedSignalsPublic);
 router.post("/play", verifyToken, playSignal);
 router.get("/history", verifyToken, getSignalHistory);
 router.get("/win-rate", verifyToken, getApprovedSignalsWinRate);
