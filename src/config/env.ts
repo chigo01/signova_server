@@ -31,6 +31,8 @@ interface EnvConfig {
   ADMIN_EMAILS: string[];
   SIGNALS_INVALIDATE_SECRET?: string;
   SIGNALS_ALERT_SECRET?: string;
+  /** Shared secret sent to admin-server when reading approved/elite signals. */
+  SIGNALS_READ_SECRET?: string;
   RESEND_API_KEY?: string;
   FCSAPI_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -146,6 +148,7 @@ function validateEnv(): EnvConfig {
       .filter(Boolean),
     SIGNALS_INVALIDATE_SECRET: process.env.SIGNALS_INVALIDATE_SECRET,
     SIGNALS_ALERT_SECRET: process.env.SIGNALS_ALERT_SECRET,
+    SIGNALS_READ_SECRET: process.env.SIGNALS_READ_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     FCSAPI_KEY: process.env.FCSAPI_KEY,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,

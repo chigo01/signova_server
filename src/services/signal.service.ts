@@ -20,6 +20,18 @@ const APPROVED_HISTORY_AGG_PAGE_SIZE = 100000000;
 
 export class SignalService {
   /**
+   * Headers for server-to-server reads against admin-server. admin-server
+   * gates the approved/elite signal endpoints behind a shared secret (audit
+   * C1); send it in `x-service-secret` when configured. When unset (e.g. local
+   * dev against an unsecured admin-server) the header is simply omitted.
+   */
+  private static adminReadHeaders(): Record<string, string> {
+    return env.SIGNALS_READ_SECRET
+      ? { "x-service-secret": env.SIGNALS_READ_SECRET }
+      : {};
+  }
+
+  /**
    * Get cached signals if available and not expired
    */
   private static async getCachedSignals(): Promise<any | null> {
@@ -49,12 +61,18 @@ export class SignalService {
    */
   private static async fetchFromAdminServer(): Promise<any> {
     console.log("Fetching fresh elite signals from admin server...");
-    const response = await fetch(`${env.ADMIN_SERVER_URL}/signals/elite`);
+    const headers = this.adminReadHeaders();
+    const response = await fetch(`${env.ADMIN_SERVER_URL}/signals/elite`, {
+      headers,
+    });
 
     if (!response.ok) {
       const eliteErrorText = await response.text();
       console.warn("Admin elite endpoint unavailable, falling back:", eliteErrorText);
-      const fallbackResponse = await fetch(`${env.ADMIN_SERVER_URL}/approved-signals`);
+      const fallbackResponse = await fetch(
+        `${env.ADMIN_SERVER_URL}/approved-signals`,
+        { headers },
+      );
 
       if (!fallbackResponse.ok) {
         const errorText = await fallbackResponse.text();
@@ -192,7 +210,9 @@ export class SignalService {
     url.searchParams.set("page", String(page));
     url.searchParams.set("limit", String(limit));
 
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), {
+      headers: this.adminReadHeaders(),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
