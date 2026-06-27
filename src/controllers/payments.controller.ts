@@ -20,21 +20,57 @@ import { env } from "../config/env";
 
 const PAYMENT_EXPIRY_MS = 60 * 60 * 1000;
 
-async function applySuccessfulPayment(transaction: ITransaction): Promise<void> {
-  if (transaction.status === "success") return;
+// Collaborators for applySuccessfulPayment. Defaulted to the real DB/services in
+// production; overridable in tests so the race-safety branching can be exercised
+// without a live MongoDB.
+export interface ApplyPaymentDeps {
+  /** Atomically flip pending/failed → success; returns the doc iff this caller won. */
+  claim: (transaction: ITransaction) => Promise<ITransaction | null>;
+  activate: (userId: string, months: number) => Promise<void>;
+  creditReferral: (transaction: ITransaction) => Promise<void>;
+}
+
+const defaultApplyPaymentDeps: ApplyPaymentDeps = {
+  claim: (transaction) =>
+    Transaction.findOneAndUpdate(
+      { _id: transaction._id, status: { $ne: "success" } },
+      { $set: { status: "success" } },
+      { new: true },
+    ),
+  activate: (userId, months) =>
+    SubscriptionService.activateOrExtendPro(userId, months),
+  creditReferral: (transaction) =>
+    ReferralService.creditReferralForPayment(transaction),
+};
+
+export async function applySuccessfulPayment(
+  transaction: ITransaction,
+  deps: ApplyPaymentDeps = defaultApplyPaymentDeps,
+): Promise<void> {
+  // Atomically claim the transaction: flip pending/failed → success in a single
+  // findOneAndUpdate gated on `status !== "success"`. Only the caller that wins
+  // the claim gets a document back and proceeds to credit. Concurrent callers —
+  // the webhook, the client-driven status poll, and Paystack webhook retries —
+  // that lose the race get null and skip, preventing the subscription from being
+  // extended twice for one payment (audit H1). The in-memory guard this replaces
+  // could not prevent this: each caller loaded its own doc and all saw "pending".
+  const claimed = await deps.claim(transaction);
+
+  // Reflect the terminal state on the caller's in-memory copy regardless of who
+  // won the claim, so a response built from it (getTransactionStatus) is accurate.
   transaction.status = "success";
-  await transaction.save();
+
+  // Lost the race — another caller already credited this payment.
+  if (!claimed) return;
+
   const months =
-    typeof transaction.monthsCount === "number" && transaction.monthsCount > 0
-      ? transaction.monthsCount
+    typeof claimed.monthsCount === "number" && claimed.monthsCount > 0
+      ? claimed.monthsCount
       : 1;
-  await SubscriptionService.activateOrExtendPro(
-    String(transaction.userId),
-    months,
-  );
+  await deps.activate(String(claimed.userId), months);
   // Recurring referral commission: credits the referrer (if any) once per
   // payment. Idempotent and self-contained — never throws into this path.
-  await ReferralService.creditReferralForPayment(transaction);
+  await deps.creditReferral(claimed);
 }
 
 function ensureAuthenticatedUser(req: Request): string {

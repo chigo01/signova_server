@@ -6,6 +6,23 @@ import { sendEmail } from "./email/email.service";
 import { welcomeEmail } from "./email/templates/welcome";
 import { deriveFirstName } from "./email/templates/_shared";
 import { ReferralService } from "./referral.service";
+import { AppError } from "../middleware/errorHandler";
+
+/** Subset of Google's tokeninfo response we rely on. */
+export interface GoogleTokenInfo {
+  aud?: string;
+  azp?: string;
+  expires_in?: string;
+  email_verified?: string | boolean;
+}
+
+/** Subset of Google's userinfo (oauth2/v3) response we rely on. */
+export interface GoogleUserInfo {
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  sub?: string;
+}
 
 export class AuthService {
   private static isTestOtpEmail(normalizedEmail: string): boolean {
@@ -191,26 +208,88 @@ export class AuthService {
   }
 
   /**
-   * Verify Google access token via Google's userinfo endpoint
+   * Verify a Google access token and return the proven identity.
+   *
+   * The access token's audience (`aud` / `azp` — the OAuth client id it was
+   * minted for) is verified against GOOGLE_CLIENT_ID via Google's tokeninfo
+   * endpoint BEFORE the userinfo profile is trusted. Without this check, any
+   * valid Google access token — including one issued for a *different* OAuth
+   * app — yields a valid userinfo response, letting an attacker who obtains a
+   * victim's token for an unrelated app log in as that victim (audit C2).
+   *
+   * userinfo alone cannot do this: it does not return the audience, which is
+   * exactly the claim that proves the token was issued for Signova.
    */
   static async verifyGoogleToken(
     accessToken: string
   ): Promise<{ email: string; name: string; googleId: string }> {
-    const res = await fetch(
-      "https://www.googleapis.com/oauth2/v3/userinfo",
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-
-    if (!res.ok) {
-      throw new Error("Invalid Google token");
+    const expectedAud = env.GOOGLE_CLIENT_ID;
+    if (!expectedAud) {
+      // Fail closed: with no configured client id we cannot prove the token was
+      // issued for Signova, so we must not trust any token.
+      throw new AppError(503, "Google login is not configured");
     }
 
-    const payload = await res.json();
+    // 1. Verify the token's audience.
+    const tokenInfoRes = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(
+        accessToken
+      )}`
+    );
+    if (!tokenInfoRes.ok) {
+      throw new AppError(401, "Invalid Google token");
+    }
+    const tokenInfo = (await tokenInfoRes.json()) as GoogleTokenInfo;
+    const tokenAud = tokenInfo.aud ?? tokenInfo.azp;
+    if (!tokenAud || tokenAud !== expectedAud) {
+      throw new AppError(
+        401,
+        "Google token was not issued for this application"
+      );
+    }
+
+    // 2. Audience proven — fetch the profile (name/email/sub) from userinfo.
+    const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      throw new AppError(401, "Invalid Google token");
+    }
+
+    const payload = (await res.json()) as GoogleUserInfo;
+
+    return AuthService.buildGoogleIdentity(tokenInfo, payload, expectedAud);
+  }
+
+  /**
+   * Pure validation + extraction shared by verifyGoogleToken. Asserts the
+   * token's audience matches GOOGLE_CLIENT_ID and that the profile carries a
+   * verified email + subject, then returns the proven identity. Kept separate
+   * so the audience/identity rules can be unit-tested without network calls.
+   */
+  static buildGoogleIdentity(
+    tokenInfo: GoogleTokenInfo,
+    userInfo: GoogleUserInfo,
+    expectedAud: string
+  ): { email: string; name: string; googleId: string } {
+    const aud = tokenInfo.aud ?? tokenInfo.azp;
+    if (!aud || aud !== expectedAud) {
+      throw new AppError(
+        401,
+        "Google token was not issued for this application"
+      );
+    }
+    if (!userInfo.email || !userInfo.sub) {
+      throw new AppError(401, "Google token is missing identity claims");
+    }
+    if (userInfo.email_verified === false) {
+      throw new AppError(401, "Google email is not verified");
+    }
 
     return {
-      email: payload.email,
-      name: payload.name || payload.email.split("@")[0],
-      googleId: payload.sub,
+      email: userInfo.email,
+      name: userInfo.name || userInfo.email.split("@")[0],
+      googleId: userInfo.sub,
     };
   }
 
