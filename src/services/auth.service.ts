@@ -1,4 +1,5 @@
 import User, { IUser } from "../models/user.model";
+import TokenBlacklist from "../models/tokenBlacklist.model";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { AUTH_CONSTANTS } from "../config/constants";
@@ -360,5 +361,43 @@ export class AuthService {
       userId: string;
       email: string;
     };
+  }
+
+  /**
+   * Expiry instant of a JWT (from its `exp` claim). Falls back to the standard
+   * token lifetime when the claim can't be read, so a blacklisted token is
+   * always retained at least until it would have expired.
+   */
+  static getTokenExpiry(token: string): Date {
+    try {
+      const decoded = jwt.decode(token) as { exp?: number } | null;
+      if (decoded?.exp) {
+        return new Date(decoded.exp * 1000);
+      }
+    } catch {
+      // fall through to default
+    }
+    return new Date(Date.now() + AUTH_CONSTANTS.JWT_EXPIRY_MS);
+  }
+
+  /**
+   * Revoke a token (logout). Idempotent: re-revoking an already-blacklisted
+   * token is a no-op rather than an error.
+   */
+  static async blacklistToken(token: string): Promise<void> {
+    const expiresAt = this.getTokenExpiry(token);
+    await TokenBlacklist.updateOne(
+      { token },
+      { $setOnInsert: { token, expiresAt } },
+      { upsert: true }
+    );
+  }
+
+  /**
+   * True if the token has been revoked and is still within its lifetime.
+   */
+  static async isTokenBlacklisted(token: string): Promise<boolean> {
+    const found = await TokenBlacklist.exists({ token });
+    return found != null;
   }
 }

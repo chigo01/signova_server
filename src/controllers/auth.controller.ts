@@ -4,6 +4,7 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
 import User from "../models/user.model";
 import { PROFILE_CONSTANTS } from "../config/constants";
+import { COOKIE_NAME } from "../config/cookie";
 
 // Notification preference categories. Each maps to a set of emails the user can
 // opt out of; transactional mail (OTP, welcome) is intentionally not included.
@@ -145,10 +146,24 @@ export const googleLogin = asyncHandler(
   }
 );
 
-export const logout = (_req: Request, res: Response) => {
-  // Cookie is now managed client-side, just return success
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+  // Revoke the presented token so it can't be reused after logout. The token
+  // may arrive as a Bearer header or the auth cookie. Always 200 — logout is
+  // best-effort and idempotent even if no token was supplied.
+  const authHeader = req.headers.authorization;
+  let token: string | undefined;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.substring(7);
+  } else {
+    token = (req.cookies as Record<string, string> | undefined)?.[COOKIE_NAME];
+  }
+
+  if (token) {
+    await AuthService.blacklistToken(token);
+  }
+
   res.status(200).json({ message: "Logged out successfully" });
-};
+});
 
 export const checkAuth = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) {
