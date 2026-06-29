@@ -25,11 +25,10 @@ export const getApprovedSignals = asyncHandler(
   },
 );
 
-// Public, unauthenticated view of approved signals for guests. Returns ONLY
-// the trading pair and direction — every numeric field (entryPrice,
-// exitTargets, indicators, etc.) is stripped server-side so guests can never
-// recover real prices by inspecting the network response. Reuses the same
-// cached source as getApprovedSignals.
+// Public, unauthenticated view of approved signals for guests. Returns
+// the trading pair, direction, entryPrice, and takeProfit1. Other numeric
+// fields (takeProfit2, stopLoss, indicators, etc.) are stripped server-side.
+// Reuses the same cached source as getApprovedSignals.
 export const getApprovedSignalsPublic = asyncHandler(
   async (_req: Request, res: Response) => {
     const data = await SignalService.getApprovedSignals();
@@ -39,10 +38,12 @@ export const getApprovedSignalsPublic = asyncHandler(
       ? ((data as { signals: Array<Record<string, unknown>> }).signals)
       : [];
 
-    const publicSignals = signals.map((s) => ({
+    const publicSignals = signals.map((s: any) => ({
       _id: s._id,
       pair: s.pair,
       direction: s.direction,
+      entryPrice: s.entryPrice,
+      takeProfit1: s.exitTargets?.takeProfit1,
     }));
 
     res.status(200).json({
