@@ -17,6 +17,7 @@ const SIGNALS_CACHE_KEY = "elite-signals-v2";
 
 /** Page size when scanning full approved history (e.g. win rate). */
 const APPROVED_HISTORY_AGG_PAGE_SIZE = 100000000;
+const WINNING_TRADE_OUTCOMES = new Set(["TP_HIT", "TP1_HIT", "TP2_HIT"]);
 
 export class SignalService {
   /**
@@ -245,7 +246,8 @@ export class SignalService {
   }
 
   /**
-   * Win rate from full approved history: final take-profit outcomes / total approved signals (%).
+   * Win rate from the full approved-signal table history:
+   * every take-profit outcome / total approved signals (%).
    */
   static async getApprovedSignalsWinRate(): Promise<{
     winRate: number;
@@ -265,10 +267,7 @@ export class SignalService {
       const items: any[] = Array.isArray(data?.items) ? data.items : [];
       for (const item of items) {
         totalSignals += 1;
-        if (
-          item?.signal?.tradeOutcome === "TP_HIT" ||
-          item?.signal?.tradeOutcome === "TP2_HIT"
-        ) {
+        if (WINNING_TRADE_OUTCOMES.has(item?.signal?.tradeOutcome)) {
           takeProfitHits += 1;
         }
       }
