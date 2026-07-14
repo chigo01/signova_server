@@ -5,6 +5,7 @@ import Deposit from "../models/deposit.model";
 import Transaction, { ITransaction } from "../models/transaction.model";
 import User from "../models/user.model";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { effectivePlan } from "../services/planEntitlement.service";
 import { AppError } from "../middleware/errorHandler";
 import { PaystackService } from "../services/paystack.service";
 import { DextopusDepositSyncService } from "../services/dextopusDepositSync.service";
@@ -343,7 +344,7 @@ export const getStablecoinDeposit = asyncHandler(
         updatedAt: syncedDeposit.updatedAt,
       },
       balance: {
-        plan: user.plan,
+        plan: effectivePlan(user),
         proPlanExpiry: user.proPlanExpiry,
         balanceUsdMicro: user.balanceUsdMicro,
         balanceUsd: formatUsdMicro(user.balanceUsdMicro),
@@ -362,7 +363,7 @@ export const getFundingBalance = asyncHandler(
     }
 
     res.status(200).json({
-      plan: user.plan,
+      plan: effectivePlan(user),
       proPlanExpiry: user.proPlanExpiry,
       balanceUsdMicro: user.balanceUsdMicro,
       balanceUsd: formatUsdMicro(user.balanceUsdMicro),
@@ -427,7 +428,7 @@ export const getTransactionStatus = asyncHandler(
       expiresAt: transaction.expiresAt,
       createdAt: transaction.createdAt,
       user: {
-        plan: user.plan,
+        plan: effectivePlan(user),
         proPlanExpiry: user.proPlanExpiry,
       },
     });

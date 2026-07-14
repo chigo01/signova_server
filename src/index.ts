@@ -21,12 +21,10 @@ import chartPresetRoutes from "./routes/chartPreset.routes";
 import referralRoutes from "./routes/referral.routes";
 import adminRoutes from "./routes/admin.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
+import { initializeStockNewsCron } from "./services/stockNewsCron.service";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
-
-// Connect Database
-connectDB();
 
 // Middleware
 app.use(
@@ -76,9 +74,13 @@ app.get("/health", (_req: Request, res: Response) => {
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
-DextopusDepositSyncService.start();
+async function startServer(): Promise<void> {
+  await connectDB();
+  DextopusDepositSyncService.start();
+  initializeStockNewsCron();
+  app.listen(env.PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${env.PORT}`);
+  });
+}
 
-// Start server
-app.listen(env.PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${env.PORT}`);
-});
+void startServer();

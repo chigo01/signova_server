@@ -15,6 +15,7 @@ import { tp2HitEmail } from "../services/email/templates/tp2Hit";
 import { slHitEmail } from "../services/email/templates/slHit";
 import { slApproachingEmail } from "../services/email/templates/slApproaching";
 import { signalAdjustedEmail } from "../services/email/templates/signalAdjusted";
+import { runEmailBatch } from "../services/email/emailBatch.service";
 import { createHash } from "crypto";
 
 export const getApprovedSignals = asyncHandler(
@@ -117,15 +118,7 @@ export const invalidateApprovedCache = asyncHandler(
   },
 );
 
-// Match Resend's account-wide 5 req/sec ceiling: 5 concurrent per batch,
-// 1.1s pause between batches. Mirrors the cadence in admin-server's
-// endUserEmail.service.ts so behavior is consistent across both senders.
-const ALERT_BROADCAST_CONCURRENCY = 5;
-const ALERT_BROADCAST_BATCH_INTERVAL_MS = 1100;
 const EMAIL_FORMAT_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 type AlertPayload = {
   alertType: SignalAlertType;
@@ -418,13 +411,7 @@ export const handleSignalAlert = asyncHandler(
       }
     };
 
-    for (let i = 0; i < recipients.length; i += ALERT_BROADCAST_CONCURRENCY) {
-      const batch = recipients.slice(i, i + ALERT_BROADCAST_CONCURRENCY);
-      await Promise.all(batch.map(sendOne));
-      if (i + ALERT_BROADCAST_CONCURRENCY < recipients.length) {
-        await sleep(ALERT_BROADCAST_BATCH_INTERVAL_MS);
-      }
-    }
+    await runEmailBatch(recipients.map((recipient) => () => sendOne(recipient)));
 
     await SignalAlertNotification.findByIdAndUpdate(notificationId, {
       $set: { recipientCount: sent },

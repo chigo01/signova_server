@@ -33,7 +33,19 @@ function ymd(d: Date): string {
 
 export class FinnhubNewsService {
   static async fetchCompanyNews(symbol: string): Promise<NewsArticle[]> {
-    const key = `FH_NEWS:${symbol}`;
+    return this.fetchCompanyNewsWithCache(symbol, "FH_NEWS", STOCKS_CONSTANTS.CACHE_TTL_MINUTES.NEWS);
+  }
+
+  static async fetchCompanyNewsForAlerts(symbol: string): Promise<NewsArticle[]> {
+    return this.fetchCompanyNewsWithCache(symbol, "FH_NEWS_ALERT", 15);
+  }
+
+  private static async fetchCompanyNewsWithCache(
+    symbol: string,
+    cachePrefix: string,
+    ttlMinutes: number,
+  ): Promise<NewsArticle[]> {
+    const key = `${cachePrefix}:${symbol}`;
     const cached = await this.getCached(key);
     if (cached) return cached as NewsArticle[];
 
@@ -58,7 +70,7 @@ export class FinnhubNewsService {
       datetime: n.datetime,
     }));
 
-    await this.setCached(key, articles, STOCKS_CONSTANTS.CACHE_TTL_MINUTES.NEWS);
+    await this.setCached(key, articles, ttlMinutes);
     return articles;
   }
 

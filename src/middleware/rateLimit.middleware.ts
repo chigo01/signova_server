@@ -73,3 +73,11 @@ export const otpVerifyLimiter = createRateLimiter(
   15 * 60 * 1000,
   "otp-verify"
 );
+
+// Watchlist mutations can trigger provider validation and should not be an
+// unbounded ticker-probing endpoint.
+export const watchlistMutationLimiter = createRateLimiter(
+  30,
+  60 * 1000,
+  "watchlist-mutation",
+);

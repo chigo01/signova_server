@@ -5,6 +5,8 @@ import { AppError } from "../middleware/errorHandler";
 import User from "../models/user.model";
 import { PROFILE_CONSTANTS } from "../config/constants";
 import { COOKIE_NAME } from "../config/cookie";
+import { isValidTimeZone } from "../services/watchlist.service";
+import { effectivePlan } from "../services/planEntitlement.service";
 
 // Notification preference categories. Each maps to a set of emails the user can
 // opt out of; transactional mail (OTP, welcome) is intentionally not included.
@@ -24,6 +26,11 @@ function serializeUser(user: {
   avatarDataUrl?: string;
   tradeReversalEnabled?: boolean;
   notificationPreferences?: Partial<Record<NotificationPreferenceKey, boolean>>;
+  stockNewsPreferences?: {
+    delivery?: "off" | "immediate" | "daily";
+    timezone?: string;
+    changedAt?: Date;
+  };
   plan?: "free" | "pro";
   proPlanExpiry?: Date;
   balanceUsdMicro?: number;
@@ -42,7 +49,12 @@ function serializeUser(user: {
       tradeAlerts: prefs.tradeAlerts ?? true,
       newsletter: prefs.newsletter ?? true,
     },
-    plan: user.plan ?? "free",
+    stockNewsPreferences: {
+      delivery: user.stockNewsPreferences?.delivery ?? "off",
+      timezone: user.stockNewsPreferences?.timezone ?? "UTC",
+      changedAt: user.stockNewsPreferences?.changedAt,
+    },
+    plan: effectivePlan(user),
     proPlanExpiry: user.proPlanExpiry,
     balanceUsdMicro: user.balanceUsdMicro ?? 0,
   };
@@ -194,6 +206,7 @@ export const updateProfile = asyncHandler(
       avatarDataUrl,
       tradeReversalEnabled,
       notificationPreferences,
+      stockNewsPreferences,
     } = req.body as {
       name?: unknown;
       username?: unknown;
@@ -201,6 +214,7 @@ export const updateProfile = asyncHandler(
       avatarDataUrl?: unknown;
       tradeReversalEnabled?: unknown;
       notificationPreferences?: unknown;
+      stockNewsPreferences?: unknown;
     };
 
     const updates: Record<string, unknown> = {};
@@ -310,6 +324,45 @@ export const updateProfile = asyncHandler(
           );
         }
         updates[`notificationPreferences.${key}`] = value;
+      }
+    }
+
+    if (stockNewsPreferences !== undefined) {
+      if (
+        typeof stockNewsPreferences !== "object" ||
+        stockNewsPreferences === null ||
+        Array.isArray(stockNewsPreferences)
+      ) {
+        throw new AppError(400, "stockNewsPreferences must be an object");
+      }
+      const allowed = new Set(["delivery", "timezone"]);
+      for (const key of Object.keys(stockNewsPreferences)) {
+        if (!allowed.has(key)) {
+          throw new AppError(400, `Unknown stock news preference: ${key}`);
+        }
+      }
+      const prefs = stockNewsPreferences as Record<string, unknown>;
+      if (prefs.delivery !== undefined) {
+        if (
+          prefs.delivery !== "off" &&
+          prefs.delivery !== "immediate" &&
+          prefs.delivery !== "daily"
+        ) {
+          throw new AppError(400, "Invalid stock news delivery mode");
+        }
+        updates["stockNewsPreferences.delivery"] = prefs.delivery;
+      }
+      if (prefs.timezone !== undefined) {
+        if (
+          typeof prefs.timezone !== "string" ||
+          !isValidTimeZone(prefs.timezone)
+        ) {
+          throw new AppError(400, "Invalid IANA timezone");
+        }
+        updates["stockNewsPreferences.timezone"] = prefs.timezone;
+      }
+      if (prefs.delivery !== undefined || prefs.timezone !== undefined) {
+        updates["stockNewsPreferences.changedAt"] = new Date();
       }
     }
 

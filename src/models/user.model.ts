@@ -14,6 +14,11 @@ export interface IUser extends Document {
     tradeAlerts: boolean;
     newsletter: boolean;
   };
+  stockNewsPreferences?: {
+    delivery: "off" | "immediate" | "daily";
+    timezone: string;
+    changedAt: Date;
+  };
   googleId?: string;
   otp?: string;
   otpExpiry?: Date;
@@ -57,6 +62,15 @@ const UserSchema: Schema = new Schema(
       newSignals: { type: Boolean, default: true },
       tradeAlerts: { type: Boolean, default: true },
       newsletter: { type: Boolean, default: true },
+    },
+    stockNewsPreferences: {
+      delivery: {
+        type: String,
+        enum: ["off", "immediate", "daily"],
+        default: "off",
+      },
+      timezone: { type: String, default: "UTC" },
+      changedAt: { type: Date, default: Date.now },
     },
     googleId: { type: String, sparse: true },
     otp: { type: String },
