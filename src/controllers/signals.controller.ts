@@ -17,6 +17,7 @@ import { slApproachingEmail } from "../services/email/templates/slApproaching";
 import { signalAdjustedEmail } from "../services/email/templates/signalAdjusted";
 import { runEmailBatch } from "../services/email/emailBatch.service";
 import { createHash } from "crypto";
+import { toPublicSignal } from "../utils/publicSignal";
 
 export const getApprovedSignals = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -27,8 +28,9 @@ export const getApprovedSignals = asyncHandler(
 );
 
 // Public, unauthenticated view of approved signals for guests. Returns
-// the trading pair, direction, entryPrice, and takeProfit1. Other numeric
-// fields (takeProfit2, stopLoss, indicators, etc.) are stripped server-side.
+// the trading pair, direction, release timestamp, entryPrice, and takeProfit1.
+// Other numeric fields (takeProfit2, stopLoss, indicators, etc.) are stripped
+// server-side.
 // Reuses the same cached source as getApprovedSignals.
 export const getApprovedSignalsPublic = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -39,13 +41,7 @@ export const getApprovedSignalsPublic = asyncHandler(
       ? ((data as { signals: Array<Record<string, unknown>> }).signals)
       : [];
 
-    const publicSignals = signals.map((s: any) => ({
-      _id: s._id,
-      pair: s.pair,
-      direction: s.direction,
-      entryPrice: s.entryPrice,
-      takeProfit1: s.exitTargets?.takeProfit1,
-    }));
+    const publicSignals = signals.map(toPublicSignal);
 
     res.status(200).json({
       success: true,
