@@ -36,9 +36,6 @@ export const newSignalEmail = (
       ["Pair", pair],
       ["Our call", direction],
       ["Entry price", escapeHtml(formatPriceForEmail(data.entryPrice, data.pair))],
-      ["Stop loss", escapeHtml(formatPriceForEmail(data.stopLoss, data.pair))],
-      ["Take profit 1 (TP1)", escapeHtml(formatPriceForEmail(data.takeProfit1, data.pair))],
-      ["Take profit 2 (TP2)", escapeHtml(formatPriceForEmail(data.takeProfit2, data.pair))],
       ["Timeframe", escapeHtml(data.timeframe)],
     ])}
 

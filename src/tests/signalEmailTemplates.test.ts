@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { newSignalEmail } from "../services/email/templates/newSignal";
 
-test("new-signal email clearly includes entry, stop loss, TP1, and TP2", () => {
+test("new-signal email includes entry details but keeps trade levels private", () => {
   const email = newSignalEmail({
     firstName: "Ada",
     pair: "NZDJPY",
@@ -16,10 +16,7 @@ test("new-signal email clearly includes entry, stop loss, TP1, and TP2", () => {
 
   assert.match(email.html, /Entry price/);
   assert.match(email.html, /94\.43/);
-  assert.match(email.html, /Stop loss/);
-  assert.match(email.html, /94\.24/);
-  assert.match(email.html, /Take profit 1 \(TP1\)/);
-  assert.match(email.html, /94\.62/);
-  assert.match(email.html, /Take profit 2 \(TP2\)/);
-  assert.match(email.html, /94\.81/);
+  assert.doesNotMatch(email.html, /Stop loss|94\.24/);
+  assert.doesNotMatch(email.html, /Take profit 1 \(TP1\)|94\.62/);
+  assert.doesNotMatch(email.html, /Take profit 2 \(TP2\)|94\.81/);
 });
