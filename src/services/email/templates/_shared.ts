@@ -4,7 +4,7 @@ export const COMMUNITY_LINKS = {
   refer: "https://signova.app/refer",
 };
 
-export const FROM_EMAIL = "notification@signova.app";
+export const FROM_EMAIL = "Signova <notification@signova.app>";
 
 export const deriveFirstName = (name?: string | null): string => {
   const first = name?.trim().split(/\s+/)[0];
