@@ -23,6 +23,12 @@ export const escapeHtml = (value: string | number | null | undefined): string =>
 
 // JPY/XAU/BTC trade in whole units so 2 decimals is enough; FX majors need 5
 // to keep the pip-fraction (the "3" in 1.07543) visible.
+//
+// Prices are TRUNCATED, never rounded, so the emailed level can never exceed the
+// engine's actual level — the last digit is cut, not rounded up (1.075439 -> 1.07543).
+// Done via string slicing rather than Math.trunc(value * 1e5): IEEE-754 stores an
+// exact quote like 1.07543 as 1.0754299999…, which a naive multiply-truncate would
+// wrongly drop to 1.07542. Expanding past the cut point first lets that noise settle.
 export const formatPriceForEmail = (
   value: number | null | undefined,
   pair?: string
@@ -33,7 +39,9 @@ export const formatPriceForEmail = (
     upper.includes("JPY") || upper.includes("XAU") || upper.includes("BTC")
       ? 2
       : 5;
-  return value.toFixed(decimals);
+  const negative = value < 0;
+  const [intPart, fracPart = ""] = Math.abs(value).toFixed(decimals + 6).split(".");
+  return `${negative ? "-" : ""}${intPart}.${fracPart.slice(0, decimals)}`;
 };
 
 export const wrapEmail = (bodyHtml: string): string => `<!doctype html>
