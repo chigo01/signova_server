@@ -52,6 +52,8 @@ interface EnvConfig {
   STOCK_NEWS_ALERTS_ENABLED: boolean;
   STOCK_NEWS_ALERTS_CRON: string;
   ANTHROPIC_API_KEY?: string;
+  FIREBASE_PUSH_ENABLED: boolean;
+  FIREBASE_PROJECT_ID: string;
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_CALLBACK_URL?: string;
   DEXTOPUS_BASE_URL: string;
@@ -191,6 +193,9 @@ function validateEnv(): EnvConfig {
     STOCK_NEWS_ALERTS_CRON:
       process.env.STOCK_NEWS_ALERTS_CRON || "*/15 * * * *",
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    FIREBASE_PUSH_ENABLED: parseEnvTruthy(process.env.FIREBASE_PUSH_ENABLED),
+    FIREBASE_PROJECT_ID:
+      process.env.FIREBASE_PROJECT_ID || "signova-f7c94",
     PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY!,
     PAYSTACK_CALLBACK_URL: process.env.PAYSTACK_CALLBACK_URL,
     DEXTOPUS_BASE_URL:

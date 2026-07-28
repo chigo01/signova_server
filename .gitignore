@@ -16,6 +16,11 @@ build/
 .env.test.local
 .env.production.local
 
+# Firebase and Apple push credentials (mount through the deployment secret store)
+*-firebase-adminsdk-*.json
+firebase-service-account*.json
+*.p8
+
 # Logs
 logs
 *.log
