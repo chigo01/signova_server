@@ -88,5 +88,5 @@ message arrives.
 
 The server sends pushes from the same idempotent alert webhook used for email.
 `NEW_SIGNAL` follows the user's `newSignals` preference. TP and adjustment
-events follow `tradeAlerts`. SL and SL-warning delivery remains paused in the
-existing webhook. Permanently unregistered FIDs are disabled automatically.
+events follow `tradeAlerts`. SL and SL-warning delivery remains paused for both
+email and push. Permanently unregistered FIDs are disabled automatically.

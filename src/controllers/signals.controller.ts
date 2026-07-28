@@ -321,9 +321,9 @@ export const handleSignalAlert = asyncHandler(
       return;
     }
 
-    // PAUSED: SL hit and SL-approaching emails to users are temporarily disabled.
-    // Acknowledge with 200 so admin-server's webhook forward succeeds and does not
-    // retry. Remove this block to resume SL emails. TP1/TP2 are unaffected.
+    // PAUSED: SL hit and SL-approaching alerts to users are temporarily
+    // disabled for both email and push. Acknowledge with 200 so admin-server's
+    // webhook forward succeeds and does not retry. TP1/TP2 are unaffected.
     if (payload.alertType === "SL" || payload.alertType === "SL_WARNING") {
       res.status(200).json({ status: "paused" });
       return;
