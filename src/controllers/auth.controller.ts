@@ -131,16 +131,28 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
 
 export const googleLogin = asyncHandler(
   async (req: Request, res: Response) => {
-    const { access_token, referralCode } = req.body;
+    const { id_token, access_token, referralCode } = req.body;
+    const idToken =
+      typeof id_token === "string" && id_token.trim()
+        ? id_token.trim()
+        : undefined;
+    const accessToken =
+      typeof access_token === "string" && access_token.trim()
+        ? access_token.trim()
+        : undefined;
 
-    if (!access_token) {
-      throw new AppError(400, "Google access token is required");
+    if (!idToken && !accessToken) {
+      throw new AppError(400, "Google ID token or access token is required");
     }
 
     const normalizedReferralCode =
       typeof referralCode === "string" ? referralCode.trim() : undefined;
 
-    const googleUser = await AuthService.verifyGoogleToken(access_token);
+    // Native clients use an ID token. The access-token path remains available
+    // for the existing web OAuth flow and is subject to the same audience gate.
+    const googleUser = idToken
+      ? await AuthService.verifyGoogleIdToken(idToken)
+      : await AuthService.verifyGoogleAccessToken(accessToken!);
     const user = await AuthService.findOrCreateGoogleUser(
       googleUser.email,
       googleUser.name,

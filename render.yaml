@@ -7,5 +7,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: GOOGLE_CLIENT_IDS
+        sync: false
       - key: STOCK_NEWS_ALERTS_ENABLED
         value: "true"

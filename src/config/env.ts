@@ -35,6 +35,9 @@ interface EnvConfig {
   SIGNALS_READ_SECRET?: string;
   RESEND_API_KEY?: string;
   FCSAPI_KEY?: string;
+  /** OAuth client IDs whose Google tokens may authenticate with Signova. */
+  GOOGLE_CLIENT_IDS: string[];
+  /** @deprecated Prefer GOOGLE_CLIENT_IDS; retained for deployment compatibility. */
   GOOGLE_CLIENT_ID?: string;
   FINNHUB_API_KEY?: string;
   ALPHAVANTAGE_API_KEY?: string;
@@ -131,6 +134,16 @@ function validateEnv(): EnvConfig {
   );
   const dextopusStatusPollIntervalMs =
     parseOptionalInt(process.env.DEXTOPUS_STATUS_POLL_INTERVAL_MS) ?? 15000;
+  const googleClientIds = Array.from(
+    new Set(
+      [
+        process.env.GOOGLE_CLIENT_ID,
+        ...(process.env.GOOGLE_CLIENT_IDS || "").split(","),
+      ]
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
 
   return {
     NODE_ENV: nodeEnv,
@@ -153,6 +166,7 @@ function validateEnv(): EnvConfig {
     SIGNALS_READ_SECRET: process.env.SIGNALS_READ_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     FCSAPI_KEY: process.env.FCSAPI_KEY,
+    GOOGLE_CLIENT_IDS: googleClientIds,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     ALPHAVANTAGE_API_KEY: process.env.ALPHAVANTAGE_API_KEY,
