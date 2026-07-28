@@ -20,6 +20,7 @@ import journalRoutes from "./routes/journal.routes";
 import chartPresetRoutes from "./routes/chartPreset.routes";
 import referralRoutes from "./routes/referral.routes";
 import adminRoutes from "./routes/admin.routes";
+import pushRoutes from "./routes/push.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
 import { initializeStockNewsCron } from "./services/stockNewsCron.service";
 import { errorHandler } from "./middleware/errorHandler";
@@ -62,6 +63,7 @@ app.use("/journal", journalRoutes);
 app.use("/chart-presets", chartPresetRoutes);
 app.use("/referrals", referralRoutes);
 app.use("/admin", adminRoutes);
+app.use("/push", pushRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({ message: "Welcome to the Signova API!" });

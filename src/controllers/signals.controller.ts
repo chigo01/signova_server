@@ -18,6 +18,10 @@ import { signalAdjustedEmail } from "../services/email/templates/signalAdjusted"
 import { runEmailBatch } from "../services/email/emailBatch.service";
 import { createHash } from "crypto";
 import { toPublicSignal } from "../utils/publicSignal";
+import {
+  sendSignalPushToUsers,
+  type PushDeliveryResult,
+} from "../services/pushNotification.service";
 
 export const getApprovedSignals = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -368,15 +372,18 @@ export const handleSignalAlert = asyncHandler(
     const prefKey =
       payload.alertType === "NEW_SIGNAL" ? "newSignals" : "tradeAlerts";
     const docs = await User.find({
-      email: { $exists: true, $type: "string", $ne: "" },
       [`notificationPreferences.${prefKey}`]: { $ne: false },
     })
-      .select("email name")
+      .select("_id email name")
       .lean();
 
     const seen = new Set<string>();
     const recipients: Array<{ email: string; firstName: string }> = [];
+    const pushUserIds = new Set<string>();
     for (const doc of docs) {
+      const userId = String((doc as { _id?: unknown })._id ?? "");
+      if (userId) pushUserIds.add(userId);
+
       const email = (doc as { email?: string }).email?.trim().toLowerCase();
       if (!email || seen.has(email)) continue;
       if (!EMAIL_FORMAT_RE.test(email)) continue;
@@ -389,6 +396,12 @@ export const handleSignalAlert = asyncHandler(
 
     let sent = 0;
     let failed = 0;
+    let pushResult: PushDeliveryResult = {
+      targeted: 0,
+      sent: 0,
+      failed: 0,
+      invalidInstallationIds: [],
+    };
 
     const sendOne = async (recipient: {
       email: string;
@@ -407,20 +420,51 @@ export const handleSignalAlert = asyncHandler(
       }
     };
 
-    await runEmailBatch(recipients.map((recipient) => () => sendOne(recipient)));
+    const pushPromise = sendSignalPushToUsers([...pushUserIds], {
+      alertType: payload.alertType,
+      signalId: payload.signalId,
+      pair: payload.pair,
+      direction: payload.direction,
+    })
+      .then((result) => {
+        pushResult = result;
+      })
+      .catch((pushError) => {
+        // Email delivery and webhook acknowledgement must not be held hostage
+        // by Firebase credentials or a transient FCM outage.
+        console.error(
+          `[signal-alert] push failed (${payload.alertType} ${payload.pair} ${payload.signalId}):`,
+          pushError,
+        );
+      });
+
+    await Promise.all([
+      runEmailBatch(recipients.map((recipient) => () => sendOne(recipient))),
+      pushPromise,
+    ]);
 
     await SignalAlertNotification.findByIdAndUpdate(notificationId, {
-      $set: { recipientCount: sent },
+      $set: {
+        recipientCount: sent,
+        pushTargetCount: pushResult.targeted,
+        pushSentCount: pushResult.sent,
+        pushFailedCount: pushResult.failed,
+      },
     });
 
     console.log(
-      `[signal-alert] ${payload.alertType} ${payload.pair} ${payload.signalId}: sent=${sent} failed=${failed} total=${recipients.length}`,
+      `[signal-alert] ${payload.alertType} ${payload.pair} ${payload.signalId}: email_sent=${sent} email_failed=${failed} email_total=${recipients.length} push_sent=${pushResult.sent} push_failed=${pushResult.failed} push_total=${pushResult.targeted}`,
     );
 
     res.status(200).json({
       status: "sent",
       recipientCount: sent,
       failed,
+      push: {
+        targeted: pushResult.targeted,
+        sent: pushResult.sent,
+        failed: pushResult.failed,
+      },
     });
   },
 );

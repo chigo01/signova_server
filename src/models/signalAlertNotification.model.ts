@@ -13,6 +13,9 @@ export interface ISignalAlertNotification extends Document {
   alertType: SignalAlertType;
   sentAt: Date;
   recipientCount: number;
+  pushTargetCount: number;
+  pushSentCount: number;
+  pushFailedCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +30,9 @@ const SignalAlertNotificationSchema: Schema = new Schema(
     },
     sentAt: { type: Date, default: Date.now },
     recipientCount: { type: Number, default: 0 },
+    pushTargetCount: { type: Number, default: 0 },
+    pushSentCount: { type: Number, default: 0 },
+    pushFailedCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
