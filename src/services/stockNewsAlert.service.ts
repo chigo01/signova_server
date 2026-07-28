@@ -45,6 +45,54 @@ interface RecipientContext {
   }>;
 }
 
+export function shouldScheduleDailyDigest(
+  now: Date,
+  scheduleEligibleFrom: Date,
+  timeZone: string,
+): { eligible: boolean; localDate: string } {
+  const local = localDateAndHour(now, timeZone);
+  const eligibleLocal = localDateAndHour(scheduleEligibleFrom, timeZone);
+  const enabledAfterTodayDeliveryTime =
+    eligibleLocal.localDate === local.localDate && eligibleLocal.hour >= 8;
+  return {
+    eligible: local.hour >= 8 && !enabledAfterTodayDeliveryTime,
+    localDate: local.localDate,
+  };
+}
+
+export function eligibleMaterialArticles<
+  T extends Pick<IStockNewsArticle, "symbols" | "publishedAt">,
+>(
+  recipient: Pick<RecipientContext, "entries" | "preferencesChangedAt">,
+  materialArticles: T[],
+): T[] {
+  return materialArticles.filter((article) =>
+    recipient.entries.some(
+      (entry) =>
+        article.symbols.includes(entry.symbol) &&
+        article.publishedAt.getTime() >
+          Math.max(
+            entry.alertsActiveSince.getTime(),
+            recipient.preferencesChangedAt.getTime(),
+          ),
+    ),
+  );
+}
+
+export function dailyStockNewsDeliveryKey(
+  userId: string,
+  localDate: string,
+): string {
+  return `daily:${userId}:${localDate}`;
+}
+
+export function stockNewsDeliveryIsRetryable(delivery: {
+  status: "pending" | "sent" | "failed";
+  attempts: number;
+}): boolean {
+  return delivery.status !== "sent" && delivery.attempts < MAX_DELIVERY_ATTEMPTS;
+}
+
 export function canonicalNewsFingerprint(
   headline: string,
   rawUrl: string,
@@ -183,17 +231,7 @@ export class StockNewsAlertService {
       const jobs: Array<() => Promise<void>> = [];
 
       for (const recipient of recipients) {
-        const eligible = materialArticles.filter((article) =>
-          recipient.entries.some(
-            (entry) =>
-              article.symbols.includes(entry.symbol) &&
-              article.publishedAt.getTime() >
-                Math.max(
-                  entry.alertsActiveSince.getTime(),
-                  recipient.preferencesChangedAt.getTime(),
-                ),
-          ),
-        );
+        const eligible = eligibleMaterialArticles(recipient, materialArticles);
         if (eligible.length === 0) continue;
 
         if (recipient.delivery === "immediate") {
@@ -201,16 +239,14 @@ export class StockNewsAlertService {
             jobs.push(() => this.deliverImmediate(recipient, article));
           }
         } else {
-          const local = localDateAndHour(now, recipient.timezone);
-          const eligibleLocal = localDateAndHour(
+          const schedule = shouldScheduleDailyDigest(
+            now,
             recipient.scheduleEligibleFrom,
             recipient.timezone,
           );
-          const enabledAfterTodayDeliveryTime =
-            eligibleLocal.localDate === local.localDate && eligibleLocal.hour >= 8;
-          if (local.hour >= 8 && !enabledAfterTodayDeliveryTime) {
+          if (schedule.eligible) {
             jobs.push(() =>
-              this.deliverDigest(recipient, local.localDate, eligible),
+              this.deliverDigest(recipient, schedule.localDate, eligible),
             );
           }
         }
@@ -387,7 +423,7 @@ export class StockNewsAlertService {
         delivery = await StockNewsDelivery.findOne({ deliveryKey });
       }
     }
-    if (!delivery || delivery.status === "sent" || delivery.attempts >= MAX_DELIVERY_ATTEMPTS) {
+    if (!delivery || !stockNewsDeliveryIsRetryable(delivery)) {
       return null;
     }
     delivery.articleIds = articleIds.map((id) => id as never);
@@ -446,7 +482,7 @@ export class StockNewsAlertService {
     if (articles.length === 0) return;
 
     const delivery = await this.deliveryCanRun(
-      `daily:${recipient.userId}:${localDate}`,
+      dailyStockNewsDeliveryKey(recipient.userId, localDate),
       recipient.userId,
       "daily",
       articles.map((article) => String(article._id)),

@@ -1,11 +1,17 @@
 import mongoose from "mongoose";
 import User from "../models/user.model";
+import StockNewsDelivery from "../models/stockNewsDelivery.model";
+import StockNewsRun from "../models/stockNewsRun.model";
 import UserWatchlist, {
   IUserWatchlist,
   WatchlistAlertStatus,
 } from "../models/userWatchlist.model";
 import { FinnhubService } from "./finnhub.service";
 import { isEffectivePro } from "./planEntitlement.service";
+import {
+  configuredStockNewsAvailability,
+  type StockNewsAvailability,
+} from "./stockNewsReadiness.service";
 
 export const FREE_WATCHLIST_LIMIT = 3;
 export const STOCK_SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;
@@ -18,6 +24,34 @@ export interface SerializedWatchlistItem {
   status: WatchlistAlertStatus;
   alertsActiveSince: string;
   addedAt: string;
+}
+
+export interface StockNewsDeliveryHealth {
+  availability: StockNewsAvailability;
+  lastRunStatus: "completed" | "failed" | null;
+  lastRunAt: string | null;
+  lastSentAt: string | null;
+}
+
+interface LatestStockNewsRun {
+  status: "completed" | "failed";
+  startedAt: Date;
+  completedAt?: Date | null;
+}
+
+export function buildStockNewsDeliveryHealth(
+  availability: StockNewsAvailability,
+  latestRun: LatestStockNewsRun | null,
+  latestSent: { sentAt?: Date | null } | null,
+): StockNewsDeliveryHealth {
+  return {
+    availability,
+    lastRunStatus: latestRun?.status ?? null,
+    lastRunAt: latestRun
+      ? (latestRun.completedAt ?? latestRun.startedAt).toISOString()
+      : null,
+    lastSentAt: latestSent?.sentAt?.toISOString() ?? null,
+  };
 }
 
 export class WatchlistLimitError extends Error {
@@ -97,9 +131,17 @@ export class WatchlistService {
   }
 
   static async getWatchlist(userId: string) {
-    const [user, reconciled] = await Promise.all([
+    const [user, reconciled, latestRun, latestSent] = await Promise.all([
       User.findById(userId).select("stockNewsPreferences"),
       this.reconcileEntitlements(userId),
+      StockNewsRun.findOne({ status: { $in: ["completed", "failed"] } })
+        .sort({ startedAt: -1 })
+        .select("status startedAt completedAt")
+        .lean<LatestStockNewsRun | null>(),
+      StockNewsDelivery.findOne({ userId, status: "sent" })
+        .sort({ sentAt: -1 })
+        .select("sentAt")
+        .lean<{ sentAt?: Date | null } | null>(),
     ]);
     if (!user) throw new Error("User not found");
     const preferences = user.stockNewsPreferences ?? {
@@ -119,6 +161,11 @@ export class WatchlistService {
         timezone: preferences.timezone,
         changedAt: preferences.changedAt.toISOString(),
       },
+      deliveryHealth: buildStockNewsDeliveryHealth(
+        configuredStockNewsAvailability(),
+        latestRun,
+        latestSent,
+      ),
     };
   }
 

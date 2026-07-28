@@ -51,6 +51,24 @@ const DEFAULT_PROPERTIES: JournalProperty[] = [
       { id: "break-even", label: "Break-even", color: "zinc" },
     ],
   },
+  { id: "entryPrice", name: "Entry price", type: "number", width: 150 },
+  { id: "exitPrice", name: "Exit price", type: "number", width: 150 },
+  { id: "positionSize", name: "Position size", type: "number", width: 150 },
+  { id: "stopLoss", name: "Stop loss", type: "number", width: 150 },
+  { id: "targetPrice", name: "Take profit", type: "number", width: 150 },
+  {
+    id: "riskRewardRatio",
+    name: "Risk-to-reward ratio",
+    type: "number",
+    width: 170,
+  },
+  { id: "accountSize", name: "Account size", type: "number", width: 150 },
+  {
+    id: "riskPerTrade",
+    name: "Risk per trade (%)",
+    type: "number",
+    width: 160,
+  },
 ];
 
 const DEFAULT_VIEWS: JournalView[] = [

@@ -1,15 +1,17 @@
 import cron, { ScheduledTask } from "node-cron";
 import { env } from "../config/env";
 import { StockNewsAlertService } from "./stockNewsAlert.service";
+import { configuredStockNewsAvailability } from "./stockNewsReadiness.service";
 
 let task: ScheduledTask | null = null;
 
 export function initializeStockNewsCron(): void {
-  if (!env.STOCK_NEWS_ALERTS_ENABLED) {
+  const availability = configuredStockNewsAvailability();
+  if (availability === "disabled") {
     console.log("ℹ️ Stock news alerts are disabled");
     return;
   }
-  if (!env.FINNHUB_API_KEY || !env.OPENAI_API_KEY || !env.RESEND_API_KEY) {
+  if (availability === "misconfigured") {
     console.error(
       "❌ Stock news alerts require FINNHUB_API_KEY, OPENAI_API_KEY, and RESEND_API_KEY",
     );
