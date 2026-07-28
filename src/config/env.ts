@@ -39,6 +39,13 @@ interface EnvConfig {
   GOOGLE_CLIENT_IDS: string[];
   /** @deprecated Prefer GOOGLE_CLIENT_IDS; retained for deployment compatibility. */
   GOOGLE_CLIENT_ID?: string;
+  APPLE_TEAM_ID?: string;
+  APPLE_KEY_ID?: string;
+  APPLE_PRIVATE_KEY_BASE64?: string;
+  APPLE_IOS_CLIENT_ID?: string;
+  APPLE_SERVICE_CLIENT_ID?: string;
+  APPLE_REDIRECT_URI?: string;
+  APPLE_TOKEN_ENCRYPTION_KEY?: string;
   FINNHUB_API_KEY?: string;
   ALPHAVANTAGE_API_KEY?: string;
   OPENAI_API_KEY?: string;
@@ -168,6 +175,13 @@ function validateEnv(): EnvConfig {
     FCSAPI_KEY: process.env.FCSAPI_KEY,
     GOOGLE_CLIENT_IDS: googleClientIds,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
+    APPLE_KEY_ID: process.env.APPLE_KEY_ID,
+    APPLE_PRIVATE_KEY_BASE64: process.env.APPLE_PRIVATE_KEY_BASE64,
+    APPLE_IOS_CLIENT_ID: process.env.APPLE_IOS_CLIENT_ID,
+    APPLE_SERVICE_CLIENT_ID: process.env.APPLE_SERVICE_CLIENT_ID,
+    APPLE_REDIRECT_URI: process.env.APPLE_REDIRECT_URI,
+    APPLE_TOKEN_ENCRYPTION_KEY: process.env.APPLE_TOKEN_ENCRYPTION_KEY,
     FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     ALPHAVANTAGE_API_KEY: process.env.ALPHAVANTAGE_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,

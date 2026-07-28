@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { AppleAuthService } from "../services/apple-auth.service";
 import { AuthService } from "../services/auth.service";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
@@ -160,6 +161,54 @@ export const googleLogin = asyncHandler(
       normalizedReferralCode
     );
 
+    const token = AuthService.generateToken(user._id, user.email);
+
+    res.status(200).json({
+      message: "Login successful",
+      token,
+      user: serializeUser(user),
+    });
+  }
+);
+
+export const appleLogin = asyncHandler(
+  async (req: Request, res: Response) => {
+    const {
+      identity_token,
+      authorization_code,
+      raw_nonce,
+      given_name,
+      family_name,
+      referralCode,
+    } = req.body;
+    if (
+      typeof identity_token !== "string" ||
+      typeof authorization_code !== "string" ||
+      typeof raw_nonce !== "string" ||
+      !identity_token.trim() ||
+      !authorization_code.trim() ||
+      !raw_nonce.trim()
+    ) {
+      throw new AppError(400, "Apple credentials are required");
+    }
+
+    const apple = await AppleAuthService.verifyAndExchange({
+      identityToken: identity_token.trim(),
+      authorizationCode: authorization_code.trim(),
+      rawNonce: raw_nonce.trim(),
+    });
+    const name = [given_name, family_name]
+      .filter((value) => typeof value === "string" && value.trim())
+      .map((value: string) => value.trim())
+      .join(" ")
+      .slice(0, 120) || undefined;
+    const user = await AuthService.findOrCreateAppleUser(
+      apple.appleId,
+      apple.email,
+      name,
+      apple.encryptedRefreshToken,
+      typeof referralCode === "string" ? referralCode.trim() : undefined
+    );
     const token = AuthService.generateToken(user._id, user.email);
 
     res.status(200).json({

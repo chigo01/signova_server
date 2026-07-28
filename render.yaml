@@ -9,5 +9,15 @@ services:
         value: production
       - key: GOOGLE_CLIENT_IDS
         sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY_BASE64
+        sync: false
+      - key: APPLE_IOS_CLIENT_ID
+        value: com.signova.signova
+      - key: APPLE_TOKEN_ENCRYPTION_KEY
+        sync: false
       - key: STOCK_NEWS_ALERTS_ENABLED
         value: "true"
