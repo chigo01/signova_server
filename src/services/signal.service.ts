@@ -242,7 +242,24 @@ export class SignalService {
         ? limit
         : PAGINATION_CONSTANTS.DEFAULT_LIMIT;
 
-    return this.fetchApprovedSignalsHistoryPage(currentPage, currentLimit);
+    const history = await this.fetchApprovedSignalsHistoryPage(
+      currentPage,
+      currentLimit,
+    );
+
+    if (Array.isArray(history?.items)) {
+      for (const item of history.items) {
+        const signal = item?.signal;
+        if (
+          signal?.tradeOutcome === "TP1_HIT" ||
+          signal?.tradeOutcome === "TP2_HIT"
+        ) {
+          signal.tradeOutcome = "TP_HIT";
+        }
+      }
+    }
+
+    return history;
   }
 
   /**
