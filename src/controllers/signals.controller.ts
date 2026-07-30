@@ -400,7 +400,7 @@ export const handleSignalAlert = asyncHandler(
       targeted: 0,
       sent: 0,
       failed: 0,
-      invalidInstallationIds: [],
+      invalidRegistrationTokens: [],
       errorCodes: [],
     };
 

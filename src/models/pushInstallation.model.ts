@@ -1,10 +1,12 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export type PushPlatform = "android" | "ios";
+export type PushRegistrationType = "fcm_token";
 
 export interface IPushInstallation extends Document {
   userId: mongoose.Types.ObjectId;
   installationId: string;
+  registrationType: PushRegistrationType;
   platform: PushPlatform;
   appVersion?: string;
   enabled: boolean;
@@ -27,6 +29,13 @@ const PushInstallationSchema = new Schema<IPushInstallation>(
       unique: true,
       trim: true,
       maxlength: 4096,
+    },
+    registrationType: {
+      type: String,
+      enum: ["fcm_token"],
+      required: true,
+      default: "fcm_token",
+      index: true,
     },
     platform: {
       type: String,

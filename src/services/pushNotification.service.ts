@@ -1,7 +1,7 @@
 import type {
   BaseMessage,
-  FidMulticastMessage,
   Messaging,
+  MulticastMessage,
 } from "firebase-admin/messaging";
 import type { SignalAlertType } from "../models/signalAlertNotification.model";
 import PushInstallation from "../models/pushInstallation.model";
@@ -10,9 +10,7 @@ import { getFirebaseMessaging } from "./firebaseAdmin.service";
 const MOBILE_APPLICATION_ID = "com.signova.signova";
 const SIGNALS_CHANNEL_ID = "signova_signals";
 const FCM_MULTICAST_LIMIT = 500;
-const PERMANENT_INSTALLATION_ERRORS = new Set([
-  "messaging/installation-id-not-registered",
-  // Keep cleanup compatible during Firebase's FID migration window.
+const PERMANENT_REGISTRATION_ERRORS = new Set([
   "messaging/registration-token-not-registered",
 ]);
 
@@ -100,20 +98,21 @@ export type PushDeliveryResult = {
   targeted: number;
   sent: number;
   failed: number;
-  invalidInstallationIds: string[];
+  invalidRegistrationTokens: string[];
   errorCodes: string[];
 };
 
 export interface PushInstallationRepository {
-  findEnabledInstallationIds(userIds: string[]): Promise<string[]>;
-  disableInstallationIds(installationIds: string[]): Promise<void>;
+  findEnabledRegistrationTokens(userIds: string[]): Promise<string[]>;
+  disableRegistrationTokens(registrationTokens: string[]): Promise<void>;
 }
 
 const mongoosePushInstallationRepository: PushInstallationRepository = {
-  async findEnabledInstallationIds(userIds) {
+  async findEnabledRegistrationTokens(userIds) {
     if (userIds.length === 0) return [];
     const installations = await PushInstallation.find({
       userId: { $in: userIds },
+      registrationType: "fcm_token",
       enabled: true,
     })
       .select("installationId")
@@ -121,10 +120,13 @@ const mongoosePushInstallationRepository: PushInstallationRepository = {
     return installations.map((installation) => installation.installationId);
   },
 
-  async disableInstallationIds(installationIds) {
-    if (installationIds.length === 0) return;
+  async disableRegistrationTokens(registrationTokens) {
+    if (registrationTokens.length === 0) return;
     await PushInstallation.updateMany(
-      { installationId: { $in: installationIds } },
+      {
+        installationId: { $in: registrationTokens },
+        registrationType: "fcm_token",
+      },
       { $set: { enabled: false } },
     );
   },
@@ -143,30 +145,32 @@ function firebaseErrorCode(error: unknown): string {
 }
 
 export async function deliverSignalPush(
-  installationIds: string[],
+  registrationTokens: string[],
   payload: SignalPushPayload,
   messaging: Pick<Messaging, "sendEachForMulticast">,
 ): Promise<PushDeliveryResult> {
-  const uniqueInstallationIds = [...new Set(installationIds.filter(Boolean))];
+  const uniqueRegistrationTokens = [
+    ...new Set(registrationTokens.filter(Boolean)),
+  ];
   const result: PushDeliveryResult = {
-    targeted: uniqueInstallationIds.length,
+    targeted: uniqueRegistrationTokens.length,
     sent: 0,
     failed: 0,
-    invalidInstallationIds: [],
+    invalidRegistrationTokens: [],
     errorCodes: [],
   };
 
   const baseMessage = buildSignalPushMessage(payload);
   for (
     let offset = 0;
-    offset < uniqueInstallationIds.length;
+    offset < uniqueRegistrationTokens.length;
     offset += FCM_MULTICAST_LIMIT
   ) {
-    const fids = uniqueInstallationIds.slice(
+    const tokens = uniqueRegistrationTokens.slice(
       offset,
       offset + FCM_MULTICAST_LIMIT,
     );
-    const message: FidMulticastMessage = { ...baseMessage, fids };
+    const message: MulticastMessage = { ...baseMessage, tokens };
 
     try {
       const batch = await messaging.sendEachForMulticast(message);
@@ -176,18 +180,18 @@ export async function deliverSignalPush(
       batch.responses.forEach((response, index) => {
         if (!response.success && response.error) {
           result.errorCodes.push(response.error.code);
-          if (PERMANENT_INSTALLATION_ERRORS.has(response.error.code)) {
-            result.invalidInstallationIds.push(fids[index]);
+          if (PERMANENT_REGISTRATION_ERRORS.has(response.error.code)) {
+            result.invalidRegistrationTokens.push(tokens[index]);
           }
         }
       });
     } catch (error) {
       // Credential, provider, and transport failures are not evidence that the
       // installations are invalid. Preserve them for a future alert.
-      result.failed += fids.length;
+      result.failed += tokens.length;
       result.errorCodes.push(firebaseErrorCode(error));
       console.error(
-        `[push] Firebase batch failed for ${fids.length} installations:`,
+        `[push] Firebase batch failed for ${tokens.length} registrations:`,
         error,
       );
     }
@@ -210,14 +214,14 @@ export async function sendSignalPushToUsers(
       targeted: 0,
       sent: 0,
       failed: 0,
-      invalidInstallationIds: [],
+      invalidRegistrationTokens: [],
       errorCodes: [],
     };
   }
 
   const repository =
     overrides.repository ?? mongoosePushInstallationRepository;
-  const installationIds = await repository.findEnabledInstallationIds([
+  const registrationTokens = await repository.findEnabledRegistrationTokens([
     ...new Set(userIds),
   ]);
 
@@ -227,10 +231,10 @@ export async function sendSignalPushToUsers(
   } catch (error) {
     console.error("[push] Firebase initialization failed:", error);
     return {
-      targeted: installationIds.length,
+      targeted: registrationTokens.length,
       sent: 0,
-      failed: installationIds.length,
-      invalidInstallationIds: [],
+      failed: registrationTokens.length,
+      invalidRegistrationTokens: [],
       errorCodes: [firebaseErrorCode(error)],
     };
   }
@@ -240,15 +244,21 @@ export async function sendSignalPushToUsers(
       targeted: 0,
       sent: 0,
       failed: 0,
-      invalidInstallationIds: [],
+      invalidRegistrationTokens: [],
       errorCodes: [],
     };
   }
 
-  const result = await deliverSignalPush(installationIds, payload, messaging);
+  const result = await deliverSignalPush(
+    registrationTokens,
+    payload,
+    messaging,
+  );
 
-  if (result.invalidInstallationIds.length > 0) {
-    await repository.disableInstallationIds(result.invalidInstallationIds);
+  if (result.invalidRegistrationTokens.length > 0) {
+    await repository.disableRegistrationTokens(
+      result.invalidRegistrationTokens,
+    );
   }
 
   return result;

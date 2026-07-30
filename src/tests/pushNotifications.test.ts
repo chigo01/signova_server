@@ -12,8 +12,8 @@ import {
 import pushRoutes from "../routes/push.routes";
 import type {
   BatchResponse,
-  FidMulticastMessage,
   Messaging,
+  MulticastMessage,
 } from "firebase-admin/messaging";
 import type { FirebaseError } from "firebase-admin/app";
 import {
@@ -38,12 +38,12 @@ function makeResponse() {
   return { response, state };
 }
 
-test("an authenticated user can idempotently register an Android Firebase installation", async () => {
+test("an authenticated user can idempotently register an Android FCM token", async () => {
   const findOneAndUpdate = mock.method(
     PushInstallation,
     "findOneAndUpdate",
     async (_filter: unknown, _update: unknown, _options: unknown) => ({
-      installationId: "fid-android-1",
+      installationId: "fcm-token-android-1",
       platform: "android",
     }),
   );
@@ -52,7 +52,7 @@ test("an authenticated user can idempotently register an Android Firebase instal
     const request = {
       user: { userId: "507f1f77bcf86cd799439011", email: "user@signova.app" },
       body: {
-        installationId: " fid-android-1 ",
+        registrationToken: " fcm-token-android-1 ",
         platform: "android",
         appVersion: "1.4.0",
       },
@@ -65,7 +65,7 @@ test("an authenticated user can idempotently register an Android Firebase instal
     assert.deepEqual(state.body, {
       message: "Push device registered",
       installation: {
-        installationId: "fid-android-1",
+        registrationToken: "fcm-token-android-1",
         platform: "android",
       },
     });
@@ -73,12 +73,13 @@ test("an authenticated user can idempotently register an Android Firebase instal
     const call = findOneAndUpdate.mock.calls[0]!;
     const update = call.arguments[1] as { $set: { lastSeenAt: Date } };
     assert.deepEqual(call.arguments, [
-      { installationId: "fid-android-1" },
+      { installationId: "fcm-token-android-1" },
       {
         $set: {
           userId: "507f1f77bcf86cd799439011",
           platform: "android",
           appVersion: "1.4.0",
+          registrationType: "fcm_token",
           enabled: true,
           lastSeenAt: update.$set.lastSeenAt,
         },
@@ -91,7 +92,7 @@ test("an authenticated user can idempotently register an Android Firebase instal
   }
 });
 
-test("a user can only unregister a Firebase installation attached to their account", async () => {
+test("a user can only unregister an FCM token attached to their account", async () => {
   const updateOne = mock.method(
     PushInstallation,
     "updateOne",
@@ -101,7 +102,7 @@ test("a user can only unregister a Firebase installation attached to their accou
   try {
     const request = {
       user: { userId: "507f1f77bcf86cd799439011", email: "user@signova.app" },
-      body: { installationId: "fid-ios-1" },
+      body: { registrationToken: "fcm-token-ios-1" },
     } as unknown as Request;
     const { response, state } = makeResponse();
 
@@ -111,7 +112,8 @@ test("a user can only unregister a Firebase installation attached to their accou
     assert.deepEqual(state.body, { message: "Push device unregistered" });
     assert.deepEqual(updateOne.mock.calls[0]!.arguments, [
       {
-        installationId: "fid-ios-1",
+        installationId: "fcm-token-ios-1",
+        registrationType: "fcm_token",
         userId: "507f1f77bcf86cd799439011",
       },
       { $set: { enabled: false } },
@@ -128,7 +130,7 @@ test("push device routes reject unauthenticated callers", async () => {
   app.use("/push", pushRoutes);
 
   const response = await supertest(app).post("/push/devices").send({
-    installationId: "fid-android-1",
+    registrationToken: "fcm-token-android-1",
     platform: "android",
   });
 
@@ -138,7 +140,7 @@ test("push device routes reject unauthenticated callers", async () => {
   });
 });
 
-test("a new signal push uses the FID-ready Android and iOS payload contract", () => {
+test("a new signal push uses the FCM-token Android and iOS payload contract", () => {
   assert.deepEqual(
     buildSignalPushMessage({
       alertType: "NEW_SIGNAL",
@@ -183,7 +185,7 @@ test("a new signal push uses the FID-ready Android and iOS payload contract", ()
   );
 });
 
-test("push delivery reports unregistered FIDs so the server can disable them", async () => {
+test("push delivery reports unregistered tokens so the server can disable them", async () => {
   const sendEachForMulticast = mock.fn(
     async (_message: unknown): Promise<BatchResponse> => ({
       successCount: 1,
@@ -193,10 +195,10 @@ test("push delivery reports unregistered FIDs so the server can disable them", a
         {
           success: false,
           error: {
-            code: "messaging/installation-id-not-registered",
+            code: "messaging/registration-token-not-registered",
             message: "not registered",
             toJSON: () => ({
-              code: "messaging/installation-id-not-registered",
+              code: "messaging/registration-token-not-registered",
               message: "not registered",
             }),
           } as FirebaseError,
@@ -209,7 +211,7 @@ test("push delivery reports unregistered FIDs so the server can disable them", a
   } as unknown as Pick<Messaging, "sendEachForMulticast">;
 
   const result = await deliverSignalPush(
-    ["fid-good", "fid-dead"],
+    ["token-good", "token-dead"],
     {
       alertType: "TP1",
       signalId: "signal-42",
@@ -223,8 +225,8 @@ test("push delivery reports unregistered FIDs so the server can disable them", a
     targeted: 2,
     sent: 1,
     failed: 1,
-    invalidInstallationIds: ["fid-dead"],
-    errorCodes: ["messaging/installation-id-not-registered"],
+    invalidRegistrationTokens: ["token-dead"],
+    errorCodes: ["messaging/registration-token-not-registered"],
   });
   assert.equal(sendEachForMulticast.mock.callCount(), 1);
   assert.deepEqual(sendEachForMulticast.mock.calls[0]!.arguments[0], {
@@ -234,19 +236,19 @@ test("push delivery reports unregistered FIDs so the server can disable them", a
       pair: "EUR/USD",
       direction: "BUY",
     }),
-    fids: ["fid-good", "fid-dead"],
+    tokens: ["token-good", "token-dead"],
   });
 });
 
-test("user push delivery disables Firebase installations that are no longer registered", async () => {
+test("user push delivery disables FCM tokens that are no longer registered", async () => {
   const disabled: string[][] = [];
   const repository: PushInstallationRepository = {
-    async findEnabledInstallationIds(userIds) {
+    async findEnabledRegistrationTokens(userIds) {
       assert.deepEqual(userIds, ["user-1", "user-2"]);
-      return ["fid-good", "fid-dead"];
+      return ["token-good", "token-dead"];
     },
-    async disableInstallationIds(installationIds) {
-      disabled.push(installationIds);
+    async disableRegistrationTokens(registrationTokens) {
+      disabled.push(registrationTokens);
     },
   };
   const messaging = {
@@ -259,10 +261,10 @@ test("user push delivery disables Firebase installations that are no longer regi
           {
             success: false,
             error: {
-              code: "messaging/installation-id-not-registered",
+              code: "messaging/registration-token-not-registered",
               message: "not registered",
               toJSON: () => ({
-                code: "messaging/installation-id-not-registered",
+                code: "messaging/registration-token-not-registered",
                 message: "not registered",
               }),
             } as FirebaseError,
@@ -287,36 +289,36 @@ test("user push delivery disables Firebase installations that are no longer regi
     targeted: 2,
     sent: 1,
     failed: 1,
-    invalidInstallationIds: ["fid-dead"],
-    errorCodes: ["messaging/installation-id-not-registered"],
+    invalidRegistrationTokens: ["token-dead"],
+    errorCodes: ["messaging/registration-token-not-registered"],
   });
-  assert.deepEqual(disabled, [["fid-dead"]]);
+  assert.deepEqual(disabled, [["token-dead"]]);
 });
 
-test("push delivery respects Firebase's 500-FID multicast limit", async () => {
+test("push delivery respects Firebase's 500-token multicast limit", async () => {
   const batches: string[][] = [];
   const messaging = {
     async sendEachForMulticast(
-      message: FidMulticastMessage,
+      message: MulticastMessage,
     ): Promise<BatchResponse> {
-      batches.push(message.fids);
+      batches.push(message.tokens);
       return {
-        successCount: message.fids.length,
+        successCount: message.tokens.length,
         failureCount: 0,
-        responses: message.fids.map((_, index) => ({
+        responses: message.tokens.map((_, index) => ({
           success: true,
           messageId: `message-${index}`,
         })),
       };
     },
   } as Pick<Messaging, "sendEachForMulticast">;
-  const installationIds = Array.from(
+  const registrationTokens = Array.from(
     { length: 501 },
-    (_, index) => `fid-${index}`,
+    (_, index) => `token-${index}`,
   );
 
   const result = await deliverSignalPush(
-    installationIds,
+    registrationTokens,
     {
       alertType: "TP2",
       signalId: "signal-42",
@@ -331,12 +333,12 @@ test("push delivery respects Firebase's 500-FID multicast limit", async () => {
     targeted: 501,
     sent: 501,
     failed: 0,
-    invalidInstallationIds: [],
+    invalidRegistrationTokens: [],
     errorCodes: [],
   });
 });
 
-test("push delivery exposes batch-level Firebase errors without invalidating installations", async () => {
+test("push delivery exposes batch-level Firebase errors without invalidating tokens", async () => {
   const messaging = {
     async sendEachForMulticast(): Promise<BatchResponse> {
       throw Object.assign(new Error("credential rejected"), {
@@ -346,7 +348,7 @@ test("push delivery exposes batch-level Firebase errors without invalidating ins
   } as Pick<Messaging, "sendEachForMulticast">;
 
   const result = await deliverSignalPush(
-    ["fid-one", "fid-two"],
+    ["token-one", "token-two"],
     {
       alertType: "NEW_SIGNAL",
       signalId: "signal-credential-test",
@@ -360,7 +362,7 @@ test("push delivery exposes batch-level Firebase errors without invalidating ins
     targeted: 2,
     sent: 0,
     failed: 2,
-    invalidInstallationIds: [],
+    invalidRegistrationTokens: [],
     errorCodes: ["app/invalid-credential"],
   });
 });

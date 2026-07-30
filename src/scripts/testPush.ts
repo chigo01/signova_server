@@ -29,6 +29,7 @@ async function main(): Promise<void> {
 
   const installations = await PushInstallation.find({
     userId: user._id,
+    registrationType: "fcm_token",
     enabled: true,
   })
     .select("installationId platform lastSeenAt")

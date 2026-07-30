@@ -4,7 +4,7 @@ import PushInstallation, {
 } from "../models/pushInstallation.model";
 import { AppError } from "../middleware/errorHandler";
 
-const INSTALLATION_ID_MAX_LENGTH = 4096;
+const REGISTRATION_TOKEN_MAX_LENGTH = 4096;
 const APP_VERSION_MAX_LENGTH = 64;
 
 function requireAuthenticatedUserId(req: Request): string {
@@ -14,19 +14,19 @@ function requireAuthenticatedUserId(req: Request): string {
   return req.user.userId;
 }
 
-function parseInstallationId(value: unknown): string {
+function parseRegistrationToken(value: unknown): string {
   if (typeof value !== "string") {
-    throw new AppError(400, "installationId must be a string");
+    throw new AppError(400, "registrationToken must be a string");
   }
-  const installationId = value.trim();
+  const registrationToken = value.trim();
   if (
-    installationId.length === 0 ||
-    installationId.length > INSTALLATION_ID_MAX_LENGTH ||
-    /\s/.test(installationId)
+    registrationToken.length === 0 ||
+    registrationToken.length > REGISTRATION_TOKEN_MAX_LENGTH ||
+    /\s/.test(registrationToken)
   ) {
-    throw new AppError(400, "installationId is invalid");
+    throw new AppError(400, "registrationToken is invalid");
   }
-  return installationId;
+  return registrationToken;
 }
 
 function parsePlatform(value: unknown): PushPlatform {
@@ -53,17 +53,20 @@ export async function registerPushDevice(
   res: Response,
 ): Promise<void> {
   const userId = requireAuthenticatedUserId(req);
-  const installationId = parseInstallationId(req.body?.installationId);
+  const registrationToken = parseRegistrationToken(
+    req.body?.registrationToken,
+  );
   const platform = parsePlatform(req.body?.platform);
   const appVersion = parseAppVersion(req.body?.appVersion);
 
   const installation = await PushInstallation.findOneAndUpdate(
-    { installationId },
+    { installationId: registrationToken },
     {
       $set: {
         userId,
         platform,
         appVersion,
+        registrationType: "fcm_token",
         enabled: true,
         lastSeenAt: new Date(),
       },
@@ -74,7 +77,7 @@ export async function registerPushDevice(
   res.status(200).json({
     message: "Push device registered",
     installation: {
-      installationId: installation.installationId,
+      registrationToken: installation.installationId,
       platform: installation.platform,
     },
   });
@@ -85,10 +88,16 @@ export async function unregisterPushDevice(
   res: Response,
 ): Promise<void> {
   const userId = requireAuthenticatedUserId(req);
-  const installationId = parseInstallationId(req.body?.installationId);
+  const registrationToken = parseRegistrationToken(
+    req.body?.registrationToken,
+  );
 
   await PushInstallation.updateOne(
-    { installationId, userId },
+    {
+      installationId: registrationToken,
+      registrationType: "fcm_token",
+      userId,
+    },
     { $set: { enabled: false } },
   );
 
