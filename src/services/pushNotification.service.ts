@@ -101,6 +101,7 @@ export type PushDeliveryResult = {
   sent: number;
   failed: number;
   invalidInstallationIds: string[];
+  errorCodes: string[];
 };
 
 export interface PushInstallationRepository {
@@ -129,6 +130,18 @@ const mongoosePushInstallationRepository: PushInstallationRepository = {
   },
 };
 
+function firebaseErrorCode(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string"
+  ) {
+    return error.code;
+  }
+  return "messaging/unknown-error";
+}
+
 export async function deliverSignalPush(
   installationIds: string[],
   payload: SignalPushPayload,
@@ -140,6 +153,7 @@ export async function deliverSignalPush(
     sent: 0,
     failed: 0,
     invalidInstallationIds: [],
+    errorCodes: [],
   };
 
   const baseMessage = buildSignalPushMessage(payload);
@@ -160,18 +174,18 @@ export async function deliverSignalPush(
       result.failed += batch.failureCount;
 
       batch.responses.forEach((response, index) => {
-        if (
-          !response.success &&
-          response.error &&
-          PERMANENT_INSTALLATION_ERRORS.has(response.error.code)
-        ) {
-          result.invalidInstallationIds.push(fids[index]);
+        if (!response.success && response.error) {
+          result.errorCodes.push(response.error.code);
+          if (PERMANENT_INSTALLATION_ERRORS.has(response.error.code)) {
+            result.invalidInstallationIds.push(fids[index]);
+          }
         }
       });
     } catch (error) {
       // Credential, provider, and transport failures are not evidence that the
       // installations are invalid. Preserve them for a future alert.
       result.failed += fids.length;
+      result.errorCodes.push(firebaseErrorCode(error));
       console.error(
         `[push] Firebase batch failed for ${fids.length} installations:`,
         error,
@@ -179,6 +193,7 @@ export async function deliverSignalPush(
     }
   }
 
+  result.errorCodes = [...new Set(result.errorCodes)];
   return result;
 }
 
@@ -190,13 +205,13 @@ export async function sendSignalPushToUsers(
     messaging?: Pick<Messaging, "sendEachForMulticast">;
   } = {},
 ): Promise<PushDeliveryResult> {
-  const messaging = overrides.messaging ?? getFirebaseMessaging();
-  if (!messaging || userIds.length === 0) {
+  if (userIds.length === 0) {
     return {
       targeted: 0,
       sent: 0,
       failed: 0,
       invalidInstallationIds: [],
+      errorCodes: [],
     };
   }
 
@@ -205,6 +220,31 @@ export async function sendSignalPushToUsers(
   const installationIds = await repository.findEnabledInstallationIds([
     ...new Set(userIds),
   ]);
+
+  let messaging: Pick<Messaging, "sendEachForMulticast"> | null;
+  try {
+    messaging = overrides.messaging ?? getFirebaseMessaging();
+  } catch (error) {
+    console.error("[push] Firebase initialization failed:", error);
+    return {
+      targeted: installationIds.length,
+      sent: 0,
+      failed: installationIds.length,
+      invalidInstallationIds: [],
+      errorCodes: [firebaseErrorCode(error)],
+    };
+  }
+
+  if (!messaging) {
+    return {
+      targeted: 0,
+      sent: 0,
+      failed: 0,
+      invalidInstallationIds: [],
+      errorCodes: [],
+    };
+  }
+
   const result = await deliverSignalPush(installationIds, payload, messaging);
 
   if (result.invalidInstallationIds.length > 0) {

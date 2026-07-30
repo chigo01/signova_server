@@ -21,3 +21,12 @@ services:
         sync: false
       - key: STOCK_NEWS_ALERTS_ENABLED
         value: "true"
+      - key: FIREBASE_PUSH_ENABLED
+        value: "true"
+      - key: FIREBASE_PROJECT_ID
+        value: signova-f7c94
+      # Paste the complete Firebase service-account JSON into this secret env
+      # var. Alternatively, upload a Render secret file and set
+      # GOOGLE_APPLICATION_CREDENTIALS to its /etc/secrets/... path.
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false

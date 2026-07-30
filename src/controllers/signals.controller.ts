@@ -401,6 +401,7 @@ export const handleSignalAlert = asyncHandler(
       sent: 0,
       failed: 0,
       invalidInstallationIds: [],
+      errorCodes: [],
     };
 
     const sendOne = async (recipient: {
@@ -449,11 +450,12 @@ export const handleSignalAlert = asyncHandler(
         pushTargetCount: pushResult.targeted,
         pushSentCount: pushResult.sent,
         pushFailedCount: pushResult.failed,
+        pushErrorCodes: pushResult.errorCodes,
       },
     });
 
     console.log(
-      `[signal-alert] ${payload.alertType} ${payload.pair} ${payload.signalId}: email_sent=${sent} email_failed=${failed} email_total=${recipients.length} push_sent=${pushResult.sent} push_failed=${pushResult.failed} push_total=${pushResult.targeted}`,
+      `[signal-alert] ${payload.alertType} ${payload.pair} ${payload.signalId}: email_sent=${sent} email_failed=${failed} email_total=${recipients.length} push_sent=${pushResult.sent} push_failed=${pushResult.failed} push_total=${pushResult.targeted} push_errors=${pushResult.errorCodes.join(",") || "none"}`,
     );
 
     res.status(200).json({
@@ -464,6 +466,7 @@ export const handleSignalAlert = asyncHandler(
         targeted: pushResult.targeted,
         sent: pushResult.sent,
         failed: pushResult.failed,
+        errorCodes: pushResult.errorCodes,
       },
     });
   },

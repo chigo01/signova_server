@@ -224,6 +224,7 @@ test("push delivery reports unregistered FIDs so the server can disable them", a
     sent: 1,
     failed: 1,
     invalidInstallationIds: ["fid-dead"],
+    errorCodes: ["messaging/installation-id-not-registered"],
   });
   assert.equal(sendEachForMulticast.mock.callCount(), 1);
   assert.deepEqual(sendEachForMulticast.mock.calls[0]!.arguments[0], {
@@ -287,6 +288,7 @@ test("user push delivery disables Firebase installations that are no longer regi
     sent: 1,
     failed: 1,
     invalidInstallationIds: ["fid-dead"],
+    errorCodes: ["messaging/installation-id-not-registered"],
   });
   assert.deepEqual(disabled, [["fid-dead"]]);
 });
@@ -330,5 +332,35 @@ test("push delivery respects Firebase's 500-FID multicast limit", async () => {
     sent: 501,
     failed: 0,
     invalidInstallationIds: [],
+    errorCodes: [],
+  });
+});
+
+test("push delivery exposes batch-level Firebase errors without invalidating installations", async () => {
+  const messaging = {
+    async sendEachForMulticast(): Promise<BatchResponse> {
+      throw Object.assign(new Error("credential rejected"), {
+        code: "app/invalid-credential",
+      });
+    },
+  } as Pick<Messaging, "sendEachForMulticast">;
+
+  const result = await deliverSignalPush(
+    ["fid-one", "fid-two"],
+    {
+      alertType: "NEW_SIGNAL",
+      signalId: "signal-credential-test",
+      pair: "TEST/USD",
+      direction: "BUY",
+    },
+    messaging,
+  );
+
+  assert.deepEqual(result, {
+    targeted: 2,
+    sent: 0,
+    failed: 2,
+    invalidInstallationIds: [],
+    errorCodes: ["app/invalid-credential"],
   });
 });
