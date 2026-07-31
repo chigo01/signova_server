@@ -21,6 +21,7 @@ import { toPublicSignal } from "../utils/publicSignal";
 import {
   sendSignalPushToUsers,
   type PushDeliveryResult,
+  type PushRecipient,
 } from "../services/pushNotification.service";
 
 export const getApprovedSignals = asyncHandler(
@@ -379,10 +380,15 @@ export const handleSignalAlert = asyncHandler(
 
     const seen = new Set<string>();
     const recipients: Array<{ email: string; firstName: string }> = [];
-    const pushUserIds = new Set<string>();
+    const pushRecipientsByUserId = new Map<string, PushRecipient>();
     for (const doc of docs) {
       const userId = String((doc as { _id?: unknown })._id ?? "");
-      if (userId) pushUserIds.add(userId);
+      const firstName = deriveFirstName(
+        (doc as { name?: string | null }).name,
+      );
+      if (userId) {
+        pushRecipientsByUserId.set(userId, { userId, firstName });
+      }
 
       const email = (doc as { email?: string }).email?.trim().toLowerCase();
       if (!email || seen.has(email)) continue;
@@ -390,7 +396,7 @@ export const handleSignalAlert = asyncHandler(
       seen.add(email);
       recipients.push({
         email,
-        firstName: deriveFirstName((doc as { name?: string | null }).name),
+        firstName,
       });
     }
 
@@ -421,12 +427,27 @@ export const handleSignalAlert = asyncHandler(
       }
     };
 
-    const pushPromise = sendSignalPushToUsers([...pushUserIds], {
-      alertType: payload.alertType,
-      signalId: payload.signalId,
-      pair: payload.pair,
-      direction: payload.direction,
-    })
+      const pushPromise = sendSignalPushToUsers(
+        [...pushRecipientsByUserId.values()],
+        {
+          alertType: payload.alertType,
+          signalId: payload.signalId,
+          pair: payload.pair,
+          direction: payload.direction,
+          entryPrice: payload.entryPrice,
+          takeProfit1: payload.takeProfit1,
+          takeProfit2: payload.takeProfit2,
+          stopLoss: payload.stopLoss,
+          timeframe: payload.timeframe,
+          pipsAway: payload.pipsAway,
+          pipsLoss: payload.pipsLoss,
+          reasoning: payload.reasoning,
+          previousEntryPrice: payload.previousEntryPrice,
+          previousTakeProfit1: payload.previousTakeProfit1,
+          previousTakeProfit2: payload.previousTakeProfit2,
+          previousStopLoss: payload.previousStopLoss,
+        },
+      )
       .then((result) => {
         pushResult = result;
       })

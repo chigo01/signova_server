@@ -1,4 +1,5 @@
 import { escapeHtml, formatPriceForEmail, wrapEmail } from "./_shared";
+import { buildSignalAlertSubject } from "../../signalAlertCopy.service";
 
 export interface Tp1HitEmailData {
   firstName: string;
@@ -55,7 +56,11 @@ export const tp1HitEmail = (
   `);
 
   return {
-    subject: `We called it. ${data.pair} just hit our first target.`,
+    subject: buildSignalAlertSubject({
+      alertType: "TP1",
+      pair: data.pair,
+      direction: data.direction,
+    }),
     html,
   };
 };

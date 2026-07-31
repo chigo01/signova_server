@@ -12,8 +12,8 @@ import {
 import pushRoutes from "../routes/push.routes";
 import type {
   BatchResponse,
+  Message,
   Messaging,
-  MulticastMessage,
 } from "firebase-admin/messaging";
 import type { FirebaseError } from "firebase-admin/app";
 import {
@@ -140,25 +140,35 @@ test("push device routes reject unauthenticated callers", async () => {
   });
 });
 
-test("a new signal push uses the FCM-token Android and iOS payload contract", () => {
+const newSignalPayload = {
+  alertType: "NEW_SIGNAL" as const,
+  signalId: "signal-42",
+  pair: "EURGBP",
+  direction: "SELL" as const,
+  entryPrice: 0.85592,
+  takeProfit1: 0.85,
+  takeProfit2: 0.845,
+  stopLoss: 0.86,
+  timeframe: "4h",
+};
+
+test("a new signal push reuses the personalized email copy", () => {
   assert.deepEqual(
-    buildSignalPushMessage({
-      alertType: "NEW_SIGNAL",
-      signalId: "signal-42",
-      pair: "EUR/USD",
-      direction: "BUY",
-    }),
+    buildSignalPushMessage(newSignalPayload, "Favour"),
     {
       notification: {
-        title: "New EUR/USD BUY signal",
-        body: "A new BUY setup is available.",
+        title: "We're calling a SELL on EURGBP right now.",
+        body:
+          "Hey Favour, we've been watching EURGBP and the setup is there. " +
+          "Here's our call: Pair EURGBP. Our call SELL. Entry price 0.85592. " +
+          "Timeframe 4h. View the full signal in your vault.",
       },
       data: {
         type: "signal_alert",
         alertType: "NEW_SIGNAL",
         signalId: "signal-42",
-        pair: "EUR/USD",
-        direction: "BUY",
+        pair: "EURGBP",
+        direction: "SELL",
         screen: "signal-details",
       },
       android: {
@@ -186,8 +196,8 @@ test("a new signal push uses the FCM-token Android and iOS payload contract", ()
 });
 
 test("push delivery reports unregistered tokens so the server can disable them", async () => {
-  const sendEachForMulticast = mock.fn(
-    async (_message: unknown): Promise<BatchResponse> => ({
+  const sendEach = mock.fn(
+    async (_messages: Message[]): Promise<BatchResponse> => ({
       successCount: 1,
       failureCount: 1,
       responses: [
@@ -207,17 +217,15 @@ test("push delivery reports unregistered tokens so the server can disable them",
     }),
   );
   const messaging = {
-    sendEachForMulticast,
-  } as unknown as Pick<Messaging, "sendEachForMulticast">;
+    sendEach,
+  } as unknown as Pick<Messaging, "sendEach">;
 
   const result = await deliverSignalPush(
-    ["token-good", "token-dead"],
-    {
-      alertType: "TP1",
-      signalId: "signal-42",
-      pair: "EUR/USD",
-      direction: "BUY",
-    },
+    [
+      { registrationToken: "token-good", userId: "user-1", firstName: "Ada" },
+      { registrationToken: "token-dead", userId: "user-2", firstName: "Tobi" },
+    ],
+    newSignalPayload,
     messaging,
   );
 
@@ -228,31 +236,32 @@ test("push delivery reports unregistered tokens so the server can disable them",
     invalidRegistrationTokens: ["token-dead"],
     errorCodes: ["messaging/registration-token-not-registered"],
   });
-  assert.equal(sendEachForMulticast.mock.callCount(), 1);
-  assert.deepEqual(sendEachForMulticast.mock.calls[0]!.arguments[0], {
-    ...buildSignalPushMessage({
-      alertType: "TP1",
-      signalId: "signal-42",
-      pair: "EUR/USD",
-      direction: "BUY",
-    }),
-    tokens: ["token-good", "token-dead"],
-  });
+  assert.equal(sendEach.mock.callCount(), 1);
+  assert.deepEqual(sendEach.mock.calls[0]!.arguments[0], [
+    { ...buildSignalPushMessage(newSignalPayload, "Ada"), token: "token-good" },
+    { ...buildSignalPushMessage(newSignalPayload, "Tobi"), token: "token-dead" },
+  ]);
 });
 
 test("user push delivery disables FCM tokens that are no longer registered", async () => {
   const disabled: string[][] = [];
   const repository: PushInstallationRepository = {
-    async findEnabledRegistrationTokens(userIds) {
-      assert.deepEqual(userIds, ["user-1", "user-2"]);
-      return ["token-good", "token-dead"];
+    async findEnabledRegistrationTargets(recipients) {
+      assert.deepEqual(recipients, [
+        { userId: "user-1", firstName: "Ada" },
+        { userId: "user-2", firstName: "Tobi" },
+      ]);
+      return [
+        { registrationToken: "token-good", userId: "user-1", firstName: "Ada" },
+        { registrationToken: "token-dead", userId: "user-2", firstName: "Tobi" },
+      ];
     },
     async disableRegistrationTokens(registrationTokens) {
       disabled.push(registrationTokens);
     },
   };
   const messaging = {
-    async sendEachForMulticast(): Promise<BatchResponse> {
+    async sendEach(): Promise<BatchResponse> {
       return {
         successCount: 1,
         failureCount: 1,
@@ -272,16 +281,14 @@ test("user push delivery disables FCM tokens that are no longer registered", asy
         ],
       };
     },
-  } as Pick<Messaging, "sendEachForMulticast">;
+  } as Pick<Messaging, "sendEach">;
 
   const result = await sendSignalPushToUsers(
-    ["user-1", "user-2"],
-    {
-      alertType: "SIGNAL_ADJUSTED",
-      signalId: "signal-42",
-      pair: "EUR/USD",
-      direction: "BUY",
-    },
+    [
+      { userId: "user-1", firstName: "Ada" },
+      { userId: "user-2", firstName: "Tobi" },
+    ],
+    newSignalPayload,
     { repository, messaging },
   );
 
@@ -298,33 +305,32 @@ test("user push delivery disables FCM tokens that are no longer registered", asy
 test("push delivery respects Firebase's 500-token multicast limit", async () => {
   const batches: string[][] = [];
   const messaging = {
-    async sendEachForMulticast(
-      message: MulticastMessage,
-    ): Promise<BatchResponse> {
-      batches.push(message.tokens);
+    async sendEach(messages: Message[]): Promise<BatchResponse> {
+      batches.push(
+        messages.map((message) => (message as { token: string }).token),
+      );
       return {
-        successCount: message.tokens.length,
+        successCount: messages.length,
         failureCount: 0,
-        responses: message.tokens.map((_, index) => ({
+        responses: messages.map((_, index) => ({
           success: true,
           messageId: `message-${index}`,
         })),
       };
     },
-  } as Pick<Messaging, "sendEachForMulticast">;
-  const registrationTokens = Array.from(
+  } as Pick<Messaging, "sendEach">;
+  const targets = Array.from(
     { length: 501 },
-    (_, index) => `token-${index}`,
+    (_, index) => ({
+      registrationToken: `token-${index}`,
+      userId: `user-${index}`,
+      firstName: `Trader${index}`,
+    }),
   );
 
   const result = await deliverSignalPush(
-    registrationTokens,
-    {
-      alertType: "TP2",
-      signalId: "signal-42",
-      pair: "EUR/USD",
-      direction: "BUY",
-    },
+    targets,
+    newSignalPayload,
     messaging,
   );
 
@@ -340,21 +346,19 @@ test("push delivery respects Firebase's 500-token multicast limit", async () => 
 
 test("push delivery exposes batch-level Firebase errors without invalidating tokens", async () => {
   const messaging = {
-    async sendEachForMulticast(): Promise<BatchResponse> {
+    async sendEach(): Promise<BatchResponse> {
       throw Object.assign(new Error("credential rejected"), {
         code: "app/invalid-credential",
       });
     },
-  } as Pick<Messaging, "sendEachForMulticast">;
+  } as Pick<Messaging, "sendEach">;
 
   const result = await deliverSignalPush(
-    ["token-one", "token-two"],
-    {
-      alertType: "NEW_SIGNAL",
-      signalId: "signal-credential-test",
-      pair: "TEST/USD",
-      direction: "BUY",
-    },
+    [
+      { registrationToken: "token-one", userId: "user-1", firstName: "Ada" },
+      { registrationToken: "token-two", userId: "user-2", firstName: "Tobi" },
+    ],
+    newSignalPayload,
     messaging,
   );
 

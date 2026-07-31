@@ -1,11 +1,15 @@
 import type {
   BaseMessage,
+  Message,
   Messaging,
-  MulticastMessage,
 } from "firebase-admin/messaging";
-import type { SignalAlertType } from "../models/signalAlertNotification.model";
 import PushInstallation from "../models/pushInstallation.model";
 import { getFirebaseMessaging } from "./firebaseAdmin.service";
+import {
+  buildSignalAlertPushBody,
+  buildSignalAlertSubject,
+  type SignalAlertCopyPayload,
+} from "./signalAlertCopy.service";
 
 const MOBILE_APPLICATION_ID = "com.signova.signova";
 const SIGNALS_CHANNEL_ID = "signova_signals";
@@ -14,53 +18,18 @@ const PERMANENT_REGISTRATION_ERRORS = new Set([
   "messaging/registration-token-not-registered",
 ]);
 
-export type SignalPushPayload = {
-  alertType: SignalAlertType;
+export type SignalPushPayload = SignalAlertCopyPayload & {
   signalId: string;
-  pair: string;
-  direction: "BUY" | "SELL" | "HOLD";
 };
 
-function signalPushCopy(payload: SignalPushPayload): {
-  title: string;
-  body: string;
-} {
-  switch (payload.alertType) {
-    case "NEW_SIGNAL":
-      return {
-        title: `New ${payload.pair} ${payload.direction} signal`,
-        body: `A new ${payload.direction} setup is available.`,
-      };
-    case "TP1":
-      return {
-        title: `${payload.pair} reached TP1`,
-        body: "The first profit target has been reached.",
-      };
-    case "TP2":
-      return {
-        title: `${payload.pair} reached TP2`,
-        body: "The final profit target has been reached.",
-      };
-    case "SL_WARNING":
-      return {
-        title: `${payload.pair} is approaching stop loss`,
-        body: "Review the latest signal status in Signova.",
-      };
-    case "SL":
-      return {
-        title: `${payload.pair} stop loss reached`,
-        body: "The signal has been closed.",
-      };
-    case "SIGNAL_ADJUSTED":
-      return {
-        title: `${payload.pair} signal updated`,
-        body: "Entry and risk levels have been updated.",
-      };
-  }
-}
-
-export function buildSignalPushMessage(payload: SignalPushPayload): BaseMessage {
-  const notification = signalPushCopy(payload);
+export function buildSignalPushMessage(
+  payload: SignalPushPayload,
+  firstName = "there",
+): BaseMessage {
+  const notification = {
+    title: buildSignalAlertSubject(payload),
+    body: buildSignalAlertPushBody(payload, firstName),
+  };
   return {
     notification,
     data: {
@@ -102,22 +71,40 @@ export type PushDeliveryResult = {
   errorCodes: string[];
 };
 
+export type PushRecipient = {
+  userId: string;
+  firstName: string;
+};
+
+export type PushTarget = PushRecipient & {
+  registrationToken: string;
+};
+
 export interface PushInstallationRepository {
-  findEnabledRegistrationTokens(userIds: string[]): Promise<string[]>;
+  findEnabledRegistrationTargets(
+    recipients: PushRecipient[],
+  ): Promise<PushTarget[]>;
   disableRegistrationTokens(registrationTokens: string[]): Promise<void>;
 }
 
 const mongoosePushInstallationRepository: PushInstallationRepository = {
-  async findEnabledRegistrationTokens(userIds) {
-    if (userIds.length === 0) return [];
+  async findEnabledRegistrationTargets(recipients) {
+    if (recipients.length === 0) return [];
+    const firstNameByUserId = new Map(
+      recipients.map((recipient) => [recipient.userId, recipient.firstName]),
+    );
     const installations = await PushInstallation.find({
-      userId: { $in: userIds },
+      userId: { $in: [...firstNameByUserId.keys()] },
       registrationType: "fcm_token",
       enabled: true,
     })
-      .select("installationId")
+      .select("installationId userId")
       .lean();
-    return installations.map((installation) => installation.installationId);
+    return installations.map((installation) => ({
+      registrationToken: installation.installationId,
+      userId: String(installation.userId),
+      firstName: firstNameByUserId.get(String(installation.userId)) ?? "there",
+    }));
   },
 
   async disableRegistrationTokens(registrationTokens) {
@@ -145,35 +132,41 @@ function firebaseErrorCode(error: unknown): string {
 }
 
 export async function deliverSignalPush(
-  registrationTokens: string[],
+  targets: PushTarget[],
   payload: SignalPushPayload,
-  messaging: Pick<Messaging, "sendEachForMulticast">,
+  messaging: Pick<Messaging, "sendEach">,
 ): Promise<PushDeliveryResult> {
-  const uniqueRegistrationTokens = [
-    ...new Set(registrationTokens.filter(Boolean)),
+  const uniqueTargets = [
+    ...new Map(
+      targets
+        .filter((target) => Boolean(target.registrationToken))
+        .map((target) => [target.registrationToken, target]),
+    ).values(),
   ];
   const result: PushDeliveryResult = {
-    targeted: uniqueRegistrationTokens.length,
+    targeted: uniqueTargets.length,
     sent: 0,
     failed: 0,
     invalidRegistrationTokens: [],
     errorCodes: [],
   };
 
-  const baseMessage = buildSignalPushMessage(payload);
   for (
     let offset = 0;
-    offset < uniqueRegistrationTokens.length;
+    offset < uniqueTargets.length;
     offset += FCM_MULTICAST_LIMIT
   ) {
-    const tokens = uniqueRegistrationTokens.slice(
+    const batchTargets = uniqueTargets.slice(
       offset,
       offset + FCM_MULTICAST_LIMIT,
     );
-    const message: MulticastMessage = { ...baseMessage, tokens };
+    const messages: Message[] = batchTargets.map((target) => ({
+      ...buildSignalPushMessage(payload, target.firstName),
+      token: target.registrationToken,
+    }));
 
     try {
-      const batch = await messaging.sendEachForMulticast(message);
+      const batch = await messaging.sendEach(messages);
       result.sent += batch.successCount;
       result.failed += batch.failureCount;
 
@@ -181,17 +174,19 @@ export async function deliverSignalPush(
         if (!response.success && response.error) {
           result.errorCodes.push(response.error.code);
           if (PERMANENT_REGISTRATION_ERRORS.has(response.error.code)) {
-            result.invalidRegistrationTokens.push(tokens[index]);
+            result.invalidRegistrationTokens.push(
+              batchTargets[index].registrationToken,
+            );
           }
         }
       });
     } catch (error) {
       // Credential, provider, and transport failures are not evidence that the
       // installations are invalid. Preserve them for a future alert.
-      result.failed += tokens.length;
+      result.failed += batchTargets.length;
       result.errorCodes.push(firebaseErrorCode(error));
       console.error(
-        `[push] Firebase batch failed for ${tokens.length} registrations:`,
+        `[push] Firebase batch failed for ${batchTargets.length} registrations:`,
         error,
       );
     }
@@ -202,14 +197,14 @@ export async function deliverSignalPush(
 }
 
 export async function sendSignalPushToUsers(
-  userIds: string[],
+  recipients: PushRecipient[],
   payload: SignalPushPayload,
   overrides: {
     repository?: PushInstallationRepository;
-    messaging?: Pick<Messaging, "sendEachForMulticast">;
+    messaging?: Pick<Messaging, "sendEach">;
   } = {},
 ): Promise<PushDeliveryResult> {
-  if (userIds.length === 0) {
+  if (recipients.length === 0) {
     return {
       targeted: 0,
       sent: 0,
@@ -221,19 +216,24 @@ export async function sendSignalPushToUsers(
 
   const repository =
     overrides.repository ?? mongoosePushInstallationRepository;
-  const registrationTokens = await repository.findEnabledRegistrationTokens([
-    ...new Set(userIds),
-  ]);
+  const uniqueRecipients = [
+    ...new Map(
+      recipients.map((recipient) => [recipient.userId, recipient]),
+    ).values(),
+  ];
+  const targets = await repository.findEnabledRegistrationTargets(
+    uniqueRecipients,
+  );
 
-  let messaging: Pick<Messaging, "sendEachForMulticast"> | null;
+  let messaging: Pick<Messaging, "sendEach"> | null;
   try {
     messaging = overrides.messaging ?? getFirebaseMessaging();
   } catch (error) {
     console.error("[push] Firebase initialization failed:", error);
     return {
-      targeted: registrationTokens.length,
+      targeted: targets.length,
       sent: 0,
-      failed: registrationTokens.length,
+      failed: targets.length,
       invalidRegistrationTokens: [],
       errorCodes: [firebaseErrorCode(error)],
     };
@@ -249,11 +249,7 @@ export async function sendSignalPushToUsers(
     };
   }
 
-  const result = await deliverSignalPush(
-    registrationTokens,
-    payload,
-    messaging,
-  );
+  const result = await deliverSignalPush(targets, payload, messaging);
 
   if (result.invalidRegistrationTokens.length > 0) {
     await repository.disableRegistrationTokens(

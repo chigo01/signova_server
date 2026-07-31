@@ -1,4 +1,5 @@
 import { escapeHtml, formatPriceForEmail, wrapEmail } from "./_shared";
+import { buildSignalAlertSubject } from "../../signalAlertCopy.service";
 
 export interface SlApproachingEmailData {
   firstName: string;
@@ -52,7 +53,11 @@ export const slApproachingEmail = (
   `);
 
   return {
-    subject: `Head's up — our ${data.pair} trade is under pressure.`,
+    subject: buildSignalAlertSubject({
+      alertType: "SL_WARNING",
+      pair: data.pair,
+      direction: "HOLD",
+    }),
     html,
   };
 };

@@ -5,6 +5,7 @@ import PushInstallation from "../models/pushInstallation.model";
 import User from "../models/user.model";
 import { getFirebaseMessaging } from "../services/firebaseAdmin.service";
 import { deliverSignalPush } from "../services/pushNotification.service";
+import { deriveFirstName } from "../services/email/templates/_shared";
 
 function readEmail(argv: string[]): string {
   const emailFlag = argv.find((arg) => arg.startsWith("--email="));
@@ -24,7 +25,7 @@ async function main(): Promise<void> {
   }
 
   await mongoose.connect(env.MONGO_URI);
-  const user = await User.findOne({ email }).select("_id email").lean();
+  const user = await User.findOne({ email }).select("_id email name").lean();
   if (!user) throw new Error(`No user found for ${email}`);
 
   const installations = await PushInstallation.find({
@@ -51,12 +52,21 @@ async function main(): Promise<void> {
   if (!messaging) throw new Error("Firebase Messaging is disabled");
 
   const result = await deliverSignalPush(
-    installations.map((installation) => installation.installationId),
+    installations.map((installation) => ({
+      registrationToken: installation.installationId,
+      userId: String(user._id),
+      firstName: deriveFirstName(user.name),
+    })),
     {
       alertType: "NEW_SIGNAL",
       signalId: `server-push-test-${Date.now()}`,
       pair: "TEST/USD",
       direction: "BUY",
+      entryPrice: 1.23456,
+      takeProfit1: 1.24,
+      takeProfit2: 1.25,
+      stopLoss: 1.22,
+      timeframe: "1h",
     },
     messaging,
   );

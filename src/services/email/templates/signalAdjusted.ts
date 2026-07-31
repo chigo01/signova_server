@@ -4,6 +4,7 @@ import {
   formatPriceForEmail,
   wrapEmail,
 } from "./_shared";
+import { buildSignalAlertSubject } from "../../signalAlertCopy.service";
 
 export interface SignalAdjustedEmailData {
   firstName: string;
@@ -105,7 +106,11 @@ export const signalAdjustedEmail = (
   `);
 
   return {
-    subject: `We've adjusted our ${data.pair} ${data.direction} trade.`,
+    subject: buildSignalAlertSubject({
+      alertType: "SIGNAL_ADJUSTED",
+      pair: data.pair,
+      direction: data.direction,
+    }),
     html,
   };
 };

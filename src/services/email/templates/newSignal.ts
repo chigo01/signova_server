@@ -4,6 +4,7 @@ import {
   formatPriceForEmail,
   wrapEmail,
 } from "./_shared";
+import { buildSignalAlertSubject } from "../../signalAlertCopy.service";
 
 export interface NewSignalEmailData {
   firstName: string;
@@ -60,7 +61,11 @@ export const newSignalEmail = (
   `);
 
   return {
-    subject: `We're calling a ${data.direction} on ${data.pair} right now.`,
+    subject: buildSignalAlertSubject({
+      alertType: "NEW_SIGNAL",
+      pair: data.pair,
+      direction: data.direction,
+    }),
     html,
   };
 };
