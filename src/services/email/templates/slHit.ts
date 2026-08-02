@@ -4,6 +4,7 @@ import {
   formatPriceForEmail,
   wrapEmail,
 } from "./_shared";
+import { buildSignalAlertSubject } from "../../signalAlertCopy.service";
 
 export interface SlHitEmailData {
   firstName: string;
@@ -63,7 +64,11 @@ export const slHitEmail = (
   `);
 
   return {
-    subject: `This one didn't go our way. ${data.pair} hit our stop.`,
+    subject: buildSignalAlertSubject({
+      alertType: "SL",
+      pair: data.pair,
+      direction: data.direction,
+    }),
     html,
   };
 };

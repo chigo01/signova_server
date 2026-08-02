@@ -4,6 +4,7 @@ import {
   formatPriceForEmail,
   wrapEmail,
 } from "./_shared";
+import { buildSignalAlertSubject } from "../../signalAlertCopy.service";
 
 export interface Tp2HitEmailData {
   firstName: string;
@@ -64,7 +65,11 @@ export const tp2HitEmail = (
   `);
 
   return {
-    subject: `Full target. ${data.pair} ran exactly where we said it would.`,
+    subject: buildSignalAlertSubject({
+      alertType: "TP2",
+      pair: data.pair,
+      direction: data.direction,
+    }),
     html,
   };
 };

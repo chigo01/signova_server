@@ -74,6 +74,13 @@ export const otpVerifyLimiter = createRateLimiter(
   "otp-verify"
 );
 
+// Social credentials still trigger provider verification and account lookup.
+export const socialAuthLimiter = createRateLimiter(
+  20,
+  15 * 60 * 1000,
+  "social-auth"
+);
+
 // Watchlist mutations can trigger provider validation and should not be an
 // unbounded ticker-probing endpoint.
 export const watchlistMutationLimiter = createRateLimiter(

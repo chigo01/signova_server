@@ -20,6 +20,8 @@ export interface IUser extends Document {
     changedAt: Date;
   };
   googleId?: string;
+  appleId?: string;
+  appleRefreshTokenEncrypted?: string;
   otp?: string;
   otpExpiry?: Date;
   plan: 'free' | 'pro';
@@ -73,6 +75,14 @@ const UserSchema: Schema = new Schema(
       changedAt: { type: Date, default: Date.now },
     },
     googleId: { type: String, sparse: true },
+    appleId: {
+      type: String,
+      index: { unique: true, sparse: true },
+    },
+    appleRefreshTokenEncrypted: {
+      type: String,
+      select: false,
+    },
     otp: { type: String },
     otpExpiry: { type: Date },
     plan: { type: String, enum: ['free', 'pro'], default: 'free' },

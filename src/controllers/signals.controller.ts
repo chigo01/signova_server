@@ -21,6 +21,7 @@ import { toPublicSignal } from "../utils/publicSignal";
 import {
   sendSignalPushToUsers,
   type PushDeliveryResult,
+  type PushRecipient,
 } from "../services/pushNotification.service";
 
 export const getApprovedSignals = asyncHandler(
@@ -321,9 +322,9 @@ export const handleSignalAlert = asyncHandler(
       return;
     }
 
-    // PAUSED: SL hit and SL-approaching emails to users are temporarily disabled.
-    // Acknowledge with 200 so admin-server's webhook forward succeeds and does not
-    // retry. Remove this block to resume SL emails. TP1/TP2 are unaffected.
+    // PAUSED: SL hit and SL-approaching alerts to users are temporarily
+    // disabled for both email and push. Acknowledge with 200 so admin-server's
+    // webhook forward succeeds and does not retry. TP1/TP2 are unaffected.
     if (payload.alertType === "SL" || payload.alertType === "SL_WARNING") {
       res.status(200).json({ status: "paused" });
       return;
@@ -379,10 +380,15 @@ export const handleSignalAlert = asyncHandler(
 
     const seen = new Set<string>();
     const recipients: Array<{ email: string; firstName: string }> = [];
-    const pushUserIds = new Set<string>();
+    const pushRecipientsByUserId = new Map<string, PushRecipient>();
     for (const doc of docs) {
       const userId = String((doc as { _id?: unknown })._id ?? "");
-      if (userId) pushUserIds.add(userId);
+      const firstName = deriveFirstName(
+        (doc as { name?: string | null }).name,
+      );
+      if (userId) {
+        pushRecipientsByUserId.set(userId, { userId, firstName });
+      }
 
       const email = (doc as { email?: string }).email?.trim().toLowerCase();
       if (!email || seen.has(email)) continue;
@@ -390,7 +396,7 @@ export const handleSignalAlert = asyncHandler(
       seen.add(email);
       recipients.push({
         email,
-        firstName: deriveFirstName((doc as { name?: string | null }).name),
+        firstName,
       });
     }
 
@@ -400,7 +406,8 @@ export const handleSignalAlert = asyncHandler(
       targeted: 0,
       sent: 0,
       failed: 0,
-      invalidInstallationIds: [],
+      invalidRegistrationTokens: [],
+      errorCodes: [],
     };
 
     const sendOne = async (recipient: {
@@ -420,12 +427,27 @@ export const handleSignalAlert = asyncHandler(
       }
     };
 
-    const pushPromise = sendSignalPushToUsers([...pushUserIds], {
-      alertType: payload.alertType,
-      signalId: payload.signalId,
-      pair: payload.pair,
-      direction: payload.direction,
-    })
+      const pushPromise = sendSignalPushToUsers(
+        [...pushRecipientsByUserId.values()],
+        {
+          alertType: payload.alertType,
+          signalId: payload.signalId,
+          pair: payload.pair,
+          direction: payload.direction,
+          entryPrice: payload.entryPrice,
+          takeProfit1: payload.takeProfit1,
+          takeProfit2: payload.takeProfit2,
+          stopLoss: payload.stopLoss,
+          timeframe: payload.timeframe,
+          pipsAway: payload.pipsAway,
+          pipsLoss: payload.pipsLoss,
+          reasoning: payload.reasoning,
+          previousEntryPrice: payload.previousEntryPrice,
+          previousTakeProfit1: payload.previousTakeProfit1,
+          previousTakeProfit2: payload.previousTakeProfit2,
+          previousStopLoss: payload.previousStopLoss,
+        },
+      )
       .then((result) => {
         pushResult = result;
       })
@@ -449,11 +471,12 @@ export const handleSignalAlert = asyncHandler(
         pushTargetCount: pushResult.targeted,
         pushSentCount: pushResult.sent,
         pushFailedCount: pushResult.failed,
+        pushErrorCodes: pushResult.errorCodes,
       },
     });
 
     console.log(
-      `[signal-alert] ${payload.alertType} ${payload.pair} ${payload.signalId}: email_sent=${sent} email_failed=${failed} email_total=${recipients.length} push_sent=${pushResult.sent} push_failed=${pushResult.failed} push_total=${pushResult.targeted}`,
+      `[signal-alert] ${payload.alertType} ${payload.pair} ${payload.signalId}: email_sent=${sent} email_failed=${failed} email_total=${recipients.length} push_sent=${pushResult.sent} push_failed=${pushResult.failed} push_total=${pushResult.targeted} push_errors=${pushResult.errorCodes.join(",") || "none"}`,
     );
 
     res.status(200).json({
@@ -464,6 +487,7 @@ export const handleSignalAlert = asyncHandler(
         targeted: pushResult.targeted,
         sent: pushResult.sent,
         failed: pushResult.failed,
+        errorCodes: pushResult.errorCodes,
       },
     });
   },

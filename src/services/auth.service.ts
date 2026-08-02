@@ -421,6 +421,83 @@ export class AuthService {
     };
   }
 
+  static async findOrCreateAppleUser(
+    appleId: string,
+    email: string | undefined,
+    name: string | undefined,
+    encryptedRefreshToken: string | undefined,
+    referralCode?: string
+  ): Promise<{
+    _id: any;
+    email: string;
+    name?: string;
+    phone?: string;
+    plan: "free" | "pro";
+    proPlanExpiry?: Date;
+    balanceUsdMicro: number;
+  }> {
+    const normalizedEmail = email?.trim().toLowerCase();
+    let user = await User.findOne({ appleId }).select(
+      "+appleRefreshTokenEncrypted"
+    );
+
+    if (!user && normalizedEmail) {
+      user = await User.findOne({ email: normalizedEmail }).select(
+        "+appleRefreshTokenEncrypted"
+      );
+    }
+    if (!user && !normalizedEmail) {
+      throw new AppError(
+        400,
+        "Apple did not provide an email for this new account"
+      );
+    }
+
+    if (user) {
+      if (user.appleId && user.appleId !== appleId) {
+        throw new AppError(
+          409,
+          "This email is already linked to another Apple account"
+        );
+      }
+      let changed = false;
+      if (!user.appleId) {
+        user.appleId = appleId;
+        changed = true;
+      }
+      if (!user.name && name) {
+        user.name = name;
+        changed = true;
+      }
+      if (encryptedRefreshToken) {
+        user.appleRefreshTokenEncrypted = encryptedRefreshToken;
+        changed = true;
+      }
+      if (changed) await user.save();
+    } else {
+      const code = await ReferralService.generateReferralCode();
+      user = await new User({
+        email: normalizedEmail,
+        name: name || normalizedEmail!.split("@")[0],
+        appleId,
+        appleRefreshTokenEncrypted: encryptedRefreshToken,
+        referralCode: code,
+      }).save();
+      await ReferralService.attachReferrer(user, referralCode);
+    }
+
+    await this.maybeSendWelcomeEmail(user);
+    return {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      plan: user.plan,
+      proPlanExpiry: user.proPlanExpiry,
+      balanceUsdMicro: user.balanceUsdMicro,
+    };
+  }
+
   /**
    * Generate JWT token for authenticated user
    */

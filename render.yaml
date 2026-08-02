@@ -9,5 +9,24 @@ services:
         value: production
       - key: GOOGLE_CLIENT_IDS
         sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY_BASE64
+        sync: false
+      - key: APPLE_IOS_CLIENT_ID
+        value: com.signova.signova
+      - key: APPLE_TOKEN_ENCRYPTION_KEY
+        sync: false
       - key: STOCK_NEWS_ALERTS_ENABLED
         value: "true"
+      - key: FIREBASE_PUSH_ENABLED
+        value: "true"
+      - key: FIREBASE_PROJECT_ID
+        value: signova-f7c94
+      # Paste the complete Firebase service-account JSON into this secret env
+      # var. Alternatively, upload a Render secret file and set
+      # GOOGLE_APPLICATION_CREDENTIALS to its /etc/secrets/... path.
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
