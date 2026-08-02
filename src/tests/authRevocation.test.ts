@@ -54,7 +54,94 @@ test("verifyToken rejects a request with no token", async () => {
   assert.equal(nextCalled, false);
 });
 
+test("verifyToken reports an invalid token as an authentication failure", async () => {
+  mock.method(AuthService, "verifyToken", () => {
+    throw new Error("invalid signature");
+  });
+  const blacklistSpy = mock.method(
+    AuthService,
+    "isTokenBlacklisted",
+    async () => false
+  );
+  try {
+    const { res, state } = makeRes();
+    let nextCalled = false;
+    await verifyToken(
+      makeReq({ authorization: "Bearer invalid.token" }),
+      res,
+      (() => {
+        nextCalled = true;
+      }) as NextFunction
+    );
+    assert.equal(state.statusCode, 401);
+    assert.match((state.body as { message: string }).message, /expired token/);
+    assert.equal(blacklistSpy.mock.callCount(), 0);
+    assert.equal(nextCalled, false);
+  } finally {
+    mock.restoreAll();
+  }
+});
+
+test("verifyToken passes blacklist database failures to the error handler", async () => {
+  const databaseError = new Error("database unavailable");
+  mock.method(AuthService, "verifyToken", () => ({
+    userId: "u1",
+    email: "u1@x.com",
+  }));
+  mock.method(AuthService, "isTokenBlacklisted", async () => {
+    throw databaseError;
+  });
+  try {
+    const { res, state } = makeRes();
+    let nextError: unknown;
+    await verifyToken(
+      makeReq({ authorization: "Bearer valid.token" }),
+      res,
+      ((error: unknown) => {
+        nextError = error;
+      }) as NextFunction
+    );
+    assert.equal(state.statusCode, 200);
+    assert.equal(state.body, undefined);
+    assert.equal(nextError, databaseError);
+  } finally {
+    mock.restoreAll();
+  }
+});
+
+test("verifyToken passes user database failures to the error handler", async () => {
+  const databaseError = new Error("database unavailable");
+  mock.method(AuthService, "verifyToken", () => ({
+    userId: "u1",
+    email: "u1@x.com",
+  }));
+  mock.method(AuthService, "isTokenBlacklisted", async () => false);
+  mock.method(User, "exists", async () => {
+    throw databaseError;
+  });
+  try {
+    const { res, state } = makeRes();
+    let nextError: unknown;
+    await verifyToken(
+      makeReq({ authorization: "Bearer valid.token" }),
+      res,
+      ((error: unknown) => {
+        nextError = error;
+      }) as NextFunction
+    );
+    assert.equal(state.statusCode, 200);
+    assert.equal(state.body, undefined);
+    assert.equal(nextError, databaseError);
+  } finally {
+    mock.restoreAll();
+  }
+});
+
 test("verifyToken rejects a revoked (blacklisted) token", async () => {
+  mock.method(AuthService, "verifyToken", () => ({
+    userId: "u1",
+    email: "u1@x.com",
+  }));
   mock.method(AuthService, "isTokenBlacklisted", async () => true);
   try {
     const { res, state } = makeRes();

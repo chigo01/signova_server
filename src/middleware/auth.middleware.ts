@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "../services/auth.service";
 import { COOKIE_NAME } from "../config/cookie";
-import { AppError } from "./errorHandler";
 import User from "../models/user.model";
 
 export const verifyToken = async (
@@ -9,30 +8,38 @@ export const verifyToken = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  // Check Authorization header first (Bearer token)
+  let token: string | undefined;
+  const authHeader = req.headers.authorization;
+
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.substring(7);
+  } else {
+    // Fallback to cookie for backwards compatibility
+    token = req.cookies[COOKIE_NAME];
+  }
+
+  if (!token) {
+    res.status(401).json({ message: "Unauthorized - No token provided" });
+    return;
+  }
+
+  // Keep JWT failures separate from database failures. A database outage must
+  // not be reported to clients as an expired session.
+  let decoded: { userId: string; email: string };
   try {
-    // Check Authorization header first (Bearer token)
-    let token: string | undefined;
-    const authHeader = req.headers.authorization;
+    decoded = AuthService.verifyToken(token);
+  } catch {
+    res.status(401).json({ message: "Invalid or expired token" });
+    return;
+  }
 
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.substring(7);
-    } else {
-      // Fallback to cookie for backwards compatibility
-      token = req.cookies[COOKIE_NAME];
-    }
-
-    if (!token) {
-      res.status(401).json({ message: "Unauthorized - No token provided" });
-      return;
-    }
-
-    // Reject revoked tokens (logout kill switch) before trusting the claims.
+  try {
+    // Reject revoked tokens (logout kill switch).
     if (await AuthService.isTokenBlacklisted(token)) {
       res.status(401).json({ message: "Token has been revoked" });
       return;
     }
-
-    const decoded = AuthService.verifyToken(token);
 
     // Re-validate identity per request: a token's claims are trusted only while
     // the user still exists. Deleted accounts lose access immediately rather
@@ -46,11 +53,8 @@ export const verifyToken = async (
     req.user = decoded;
     next();
   } catch (error) {
-    if (error instanceof AppError) {
-      res.status(error.statusCode).json({ message: error.message });
-      return;
-    }
-    res.status(403).json({ message: "Invalid or expired token" });
-    return;
+    // Let the central error handler report infrastructure/database failures as
+    // 500s. Calling these token failures makes healthy sessions look expired.
+    next(error);
   }
 };
