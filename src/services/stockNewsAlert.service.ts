@@ -24,6 +24,31 @@ const MAX_DELIVERY_ATTEMPTS = 3;
 const NEWS_FETCH_CONCURRENCY = 5;
 const EMAIL_FORMAT_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * How far back a cutoff may reach, per delivery mode. Without this the cutoff
+ * is only ever `max(alertsActiveSince, preferencesChangedAt)`, so the first run
+ * after an outage — or after the feature is first switched on — treats
+ * Finnhub's entire 7-day window as unseen news and blasts it out at once.
+ * Immediate alerts are about breaking news, so they get a short reach; a daily
+ * digest legitimately covers the past day.
+ */
+export const MAX_BACKFILL_MS: Record<"immediate" | "daily", number> = {
+  immediate: 2 * 60 * 60 * 1000,
+  daily: 26 * 60 * 60 * 1000,
+};
+/** Classifier calls are serial and billed — cap them per run and leave the rest
+ *  `pending` for the next tick rather than stalling one run for an hour. */
+const MAX_CLASSIFICATIONS_PER_RUN = 40;
+/** Ceiling on immediate emails one user can receive from a single run. */
+const MAX_IMMEDIATE_EMAILS_PER_RUN = 3;
+/** Ceiling on articles in one digest email. */
+const MAX_DIGEST_ARTICLES = 10;
+
+const newestFirst = <T extends { publishedAt: Date }>(articles: T[]): T[] =>
+  [...articles].sort(
+    (left, right) => right.publishedAt.getTime() - left.publishedAt.getTime(),
+  );
+
 interface MaterialityResult {
   material: boolean;
   category: string;
@@ -60,21 +85,41 @@ export function shouldScheduleDailyDigest(
   };
 }
 
+/**
+ * Oldest article a recipient may be alerted about for one watchlist entry.
+ * Discovery and per-recipient eligibility both go through this so the two can
+ * never disagree about what counts as unseen.
+ */
+export function alertCutoff(
+  entry: Pick<RecipientContext["entries"][number], "alertsActiveSince">,
+  recipient: Pick<RecipientContext, "preferencesChangedAt" | "delivery">,
+  now: Date,
+): Date {
+  return new Date(
+    Math.max(
+      entry.alertsActiveSince.getTime(),
+      recipient.preferencesChangedAt.getTime(),
+      now.getTime() - MAX_BACKFILL_MS[recipient.delivery],
+    ),
+  );
+}
+
 export function eligibleMaterialArticles<
   T extends Pick<IStockNewsArticle, "symbols" | "publishedAt">,
 >(
-  recipient: Pick<RecipientContext, "entries" | "preferencesChangedAt">,
+  recipient: Pick<
+    RecipientContext,
+    "entries" | "preferencesChangedAt" | "delivery"
+  >,
   materialArticles: T[],
+  now: Date,
 ): T[] {
   return materialArticles.filter((article) =>
     recipient.entries.some(
       (entry) =>
         article.symbols.includes(entry.symbol) &&
         article.publishedAt.getTime() >
-          Math.max(
-            entry.alertsActiveSince.getTime(),
-            recipient.preferencesChangedAt.getTime(),
-          ),
+          alertCutoff(entry, recipient, now).getTime(),
     ),
   );
 }
@@ -213,29 +258,34 @@ export class StockNewsAlertService {
       const earliestBySymbol = new Map<string, Date>();
       for (const recipient of recipients) {
         for (const entry of recipient.entries) {
-          const cutoff = new Date(
-            Math.max(
-              entry.alertsActiveSince.getTime(),
-              recipient.preferencesChangedAt.getTime(),
-            ),
-          );
+          const cutoff = alertCutoff(entry, recipient, now);
           const current = earliestBySymbol.get(entry.symbol);
           if (!current || cutoff < current) earliestBySymbol.set(entry.symbol, cutoff);
         }
       }
 
-      const articles = await this.discoverArticles(earliestBySymbol);
+      const { articles, classified, deferred } =
+        await this.discoverArticles(earliestBySymbol);
       const materialArticles = articles.filter(
         (article) => article.materialStatus === "material",
       );
       const jobs: Array<() => Promise<void>> = [];
 
       for (const recipient of recipients) {
-        const eligible = eligibleMaterialArticles(recipient, materialArticles);
+        const eligible = eligibleMaterialArticles(
+          recipient,
+          materialArticles,
+          now,
+        );
         if (eligible.length === 0) continue;
 
         if (recipient.delivery === "immediate") {
-          for (const article of eligible) {
+          // Newest first, so a capped run drops the stalest stories rather than
+          // the breaking ones.
+          for (const article of newestFirst(eligible).slice(
+            0,
+            MAX_IMMEDIATE_EMAILS_PER_RUN,
+          )) {
             jobs.push(() => this.deliverImmediate(recipient, article));
           }
         } else {
@@ -257,7 +307,7 @@ export class StockNewsAlertService {
         $set: { status: "completed", completedAt: new Date() },
       });
       console.log(
-        `[stock-news] bucket=${bucket} users=${recipients.length} symbols=${earliestBySymbol.size} material=${materialArticles.length} jobs=${jobs.length} durationMs=${Date.now() - startedAt}`,
+        `[stock-news] bucket=${bucket} users=${recipients.length} symbols=${earliestBySymbol.size} discovered=${articles.length} classified=${classified} deferred=${deferred} material=${materialArticles.length} jobs=${jobs.length} durationMs=${Date.now() - startedAt}`,
       );
     } catch (error) {
       await StockNewsRun.findByIdAndUpdate(runId, {
@@ -313,7 +363,11 @@ export class StockNewsAlertService {
 
   private static async discoverArticles(
     earliestBySymbol: Map<string, Date>,
-  ): Promise<IStockNewsArticle[]> {
+  ): Promise<{
+    articles: IStockNewsArticle[];
+    classified: number;
+    deferred: number;
+  }> {
     const limit = pLimit(NEWS_FETCH_CONCURRENCY);
     const discovered = await Promise.all(
       [...earliestBySymbol].map(([symbol, earliest]) =>
@@ -358,14 +412,18 @@ export class StockNewsAlertService {
       docs.set(String(doc._id), doc);
     }
 
-    for (const doc of docs.values()) {
-      if (
-        doc.materialStatus !== "pending" &&
-        !(doc.materialStatus === "failed" &&
-          doc.classificationAttempts < MAX_CLASSIFICATION_ATTEMPTS)
-      ) {
-        continue;
-      }
+    const needsClassification = newestFirst(
+      [...docs.values()].filter(
+        (doc) =>
+          doc.materialStatus === "pending" ||
+          (doc.materialStatus === "failed" &&
+            doc.classificationAttempts < MAX_CLASSIFICATION_ATTEMPTS),
+      ),
+    );
+    // Anything past the cap keeps its `pending` status and is picked up by a
+    // later run, so a backlog drains over several ticks instead of blocking one.
+    const batch = needsClassification.slice(0, MAX_CLASSIFICATIONS_PER_RUN);
+    for (const doc of batch) {
       try {
         const classification = await this.classifyMateriality(doc);
         doc.materialStatus = classification.material ? "material" : "not_material";
@@ -380,7 +438,11 @@ export class StockNewsAlertService {
       }
       await doc.save();
     }
-    return [...docs.values()];
+    return {
+      articles: [...docs.values()],
+      classified: batch.length,
+      deferred: needsClassification.length - batch.length,
+    };
   }
 
   private static toEmailArticle(
@@ -465,9 +527,14 @@ export class StockNewsAlertService {
     localDate: string,
     candidates: IStockNewsArticle[],
   ): Promise<void> {
+    // Candidates can only be as old as the daily backfill window, so deliveries
+    // older than that can't collide — no need to scan the user's whole history.
     const previouslySent = await StockNewsDelivery.find({
       userId: recipient.userId,
       status: "sent",
+      createdAt: {
+        $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      },
     })
       .select("articleIds")
       .lean();
@@ -476,9 +543,9 @@ export class StockNewsAlertService {
         delivery.articleIds.map((id) => String(id)),
       ),
     );
-    const articles = candidates.filter(
-      (article) => !sentIds.has(String(article._id)),
-    );
+    const articles = newestFirst(
+      candidates.filter((article) => !sentIds.has(String(article._id))),
+    ).slice(0, MAX_DIGEST_ARTICLES);
     if (articles.length === 0) return;
 
     const delivery = await this.deliveryCanRun(

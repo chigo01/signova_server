@@ -10,10 +10,12 @@ import {
   isEffectivePro,
 } from "../services/planEntitlement.service";
 import {
+  alertCutoff,
   canonicalNewsFingerprint,
   dailyStockNewsDeliveryKey,
   eligibleMaterialArticles,
   localDateAndHour,
+  MAX_BACKFILL_MS,
   shouldScheduleDailyDigest,
   stockNewsDeliveryIsRetryable,
 } from "../services/stockNewsAlert.service";
@@ -122,7 +124,9 @@ test("delivery health exposes safe timestamps without provider details", () => {
 });
 
 test("material-news eligibility ignores silence and pre-activation stories", () => {
+  const now = new Date("2026-07-14T07:00:00.000Z");
   const recipient = {
+    delivery: "immediate" as const,
     preferencesChangedAt: new Date("2026-07-14T06:00:00.000Z"),
     entries: [
       {
@@ -131,19 +135,76 @@ test("material-news eligibility ignores silence and pre-activation stories", () 
       },
     ],
   };
-  assert.deepEqual(eligibleMaterialArticles(recipient, []), []);
-  const eligible = eligibleMaterialArticles(recipient, [
-    {
-      symbols: ["META"],
-      publishedAt: new Date("2026-07-14T06:20:00.000Z"),
-    },
-    {
-      symbols: ["META"],
-      publishedAt: new Date("2026-07-14T06:40:00.000Z"),
-    },
-  ]);
+  assert.deepEqual(eligibleMaterialArticles(recipient, [], now), []);
+  const eligible = eligibleMaterialArticles(
+    recipient,
+    [
+      {
+        symbols: ["META"],
+        publishedAt: new Date("2026-07-14T06:20:00.000Z"),
+      },
+      {
+        symbols: ["META"],
+        publishedAt: new Date("2026-07-14T06:40:00.000Z"),
+      },
+    ],
+    now,
+  );
   assert.equal(eligible.length, 1);
   assert.equal(eligible[0].publishedAt.toISOString(), "2026-07-14T06:40:00.000Z");
+});
+
+test("backfill clamp caps how far a cutoff can reach back", () => {
+  const now = new Date("2026-08-07T12:00:00.000Z");
+  // A watchlist entry saved weeks ago would otherwise make every story inside
+  // Finnhub's 7-day window count as unseen the first time a run happens.
+  const stale = {
+    alertsActiveSince: new Date("2026-07-14T20:33:02.000Z"),
+  };
+  const changedAt = new Date("2026-07-20T10:00:34.000Z");
+
+  assert.equal(
+    alertCutoff(stale, { delivery: "immediate", preferencesChangedAt: changedAt }, now)
+      .toISOString(),
+    new Date(now.getTime() - MAX_BACKFILL_MS.immediate).toISOString(),
+  );
+  assert.equal(
+    alertCutoff(stale, { delivery: "daily", preferencesChangedAt: changedAt }, now)
+      .toISOString(),
+    new Date(now.getTime() - MAX_BACKFILL_MS.daily).toISOString(),
+  );
+  // A digest still covers a full day, so the clamp must not gut it.
+  assert.ok(MAX_BACKFILL_MS.daily >= 24 * 60 * 60 * 1000);
+
+  // A freshly saved stock still wins over the clamp — no pre-activation news.
+  const fresh = { alertsActiveSince: new Date("2026-08-07T11:30:00.000Z") };
+  assert.equal(
+    alertCutoff(fresh, { delivery: "immediate", preferencesChangedAt: changedAt }, now)
+      .toISOString(),
+    "2026-08-07T11:30:00.000Z",
+  );
+
+  const recipient = {
+    delivery: "immediate" as const,
+    preferencesChangedAt: changedAt,
+    entries: [{ symbol: "NVDA", ...stale }],
+  };
+  assert.deepEqual(
+    eligibleMaterialArticles(
+      recipient,
+      [{ symbols: ["NVDA"], publishedAt: new Date("2026-08-05T09:00:00.000Z") }],
+      now,
+    ),
+    [],
+  );
+  assert.equal(
+    eligibleMaterialArticles(
+      recipient,
+      [{ symbols: ["NVDA"], publishedAt: new Date("2026-08-07T11:00:00.000Z") }],
+      now,
+    ).length,
+    1,
+  );
 });
 
 test("daily delivery keys deduplicate a local date and failures retry three times", () => {

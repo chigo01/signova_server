@@ -36,8 +36,11 @@ export class FinnhubNewsService {
     return this.fetchCompanyNewsWithCache(symbol, "FH_NEWS", STOCKS_CONSTANTS.CACHE_TTL_MINUTES.NEWS);
   }
 
+  // TTL must stay below the alert cron interval (*/15). At an equal 15 minutes
+  // a still-valid entry can be served on the very tick that should refresh it,
+  // silently skipping a poll.
   static async fetchCompanyNewsForAlerts(symbol: string): Promise<NewsArticle[]> {
-    return this.fetchCompanyNewsWithCache(symbol, "FH_NEWS_ALERT", 15);
+    return this.fetchCompanyNewsWithCache(symbol, "FH_NEWS_ALERT", 10);
   }
 
   private static async fetchCompanyNewsWithCache(
