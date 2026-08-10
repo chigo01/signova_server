@@ -23,6 +23,7 @@ import adminRoutes from "./routes/admin.routes";
 import pushRoutes from "./routes/push.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
 import { initializeStockNewsCron } from "./services/stockNewsCron.service";
+import { initializeAccountDeletionCron } from "./services/accountDeletionCron.service";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -80,6 +81,7 @@ async function startServer(): Promise<void> {
   await connectDB();
   DextopusDepositSyncService.start();
   initializeStockNewsCron();
+  initializeAccountDeletionCron();
   app.listen(env.PORT, () => {
     console.log(`🚀 Server running at http://localhost:${env.PORT}`);
   });

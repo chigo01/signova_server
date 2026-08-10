@@ -6,6 +6,7 @@ import { AppError } from "../middleware/errorHandler";
 const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_KEYS_URL = `${APPLE_ISSUER}/auth/keys`;
 const APPLE_TOKEN_URL = `${APPLE_ISSUER}/auth/token`;
+const APPLE_REVOKE_URL = `${APPLE_ISSUER}/auth/revoke`;
 const APPLE_KEYS_TTL_MS = 60 * 60 * 1000;
 
 interface AppleJwk {
@@ -207,6 +208,80 @@ export class AppleAuthService {
       subject: clientId,
       expiresIn: "5m",
     });
+  }
+
+  /**
+   * Invalidate a user's Sign in with Apple grant. Apple requires this when an
+   * account is deleted (App Store Review Guideline 5.1.1(v)); without it the
+   * user keeps seeing Signova under "Apps Using Apple ID" forever.
+   *
+   * Never throws: this runs inside the purge cascade, and an Apple outage or a
+   * long-expired refresh token must not stop us from deleting the account.
+   * Returns whether Apple accepted the revocation.
+   */
+  static async revokeRefreshToken(
+    encryptedRefreshToken: string
+  ): Promise<boolean> {
+    let refreshToken: string;
+    try {
+      refreshToken = this.decryptRefreshToken(encryptedRefreshToken);
+    } catch (error) {
+      console.error("Apple revoke: could not decrypt refresh token", error);
+      return false;
+    }
+
+    // We do not record which client (native iOS vs web service) minted the
+    // token, so try each configured one and stop at the first Apple accepts.
+    for (const clientId of this.configuredClientIds()) {
+      try {
+        const body = new URLSearchParams({
+          client_id: clientId,
+          client_secret: this.createClientSecret(clientId),
+          token: refreshToken,
+          token_type_hint: "refresh_token",
+        });
+        const response = await fetch(APPLE_REVOKE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        if (response.ok) return true;
+      } catch (error) {
+        console.error(
+          `Apple revoke: request failed for client ${clientId}`,
+          error
+        );
+      }
+    }
+
+    return false;
+  }
+
+  private static decryptRefreshToken(encrypted: string): string {
+    const encodedKey = env.APPLE_TOKEN_ENCRYPTION_KEY?.trim();
+    if (!encodedKey) {
+      throw new Error("Apple token encryption is not configured");
+    }
+    const key = Buffer.from(encodedKey, "base64");
+    if (key.length !== 32) {
+      throw new Error("Apple token encryption is not configured");
+    }
+
+    const [iv, authTag, ciphertext] = encrypted.split(".");
+    if (!iv || !authTag || !ciphertext) {
+      throw new Error("Apple refresh token is malformed");
+    }
+
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      key,
+      Buffer.from(iv, "base64url")
+    );
+    decipher.setAuthTag(Buffer.from(authTag, "base64url"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(ciphertext, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
   }
 
   private static encryptRefreshToken(refreshToken: string): string {

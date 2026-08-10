@@ -1,5 +1,6 @@
 import mongoose, { Document, Schema } from "mongoose";
 import { SIGCOIN_RATE_USD_DEFAULT } from "../config/referral";
+import { ACCOUNT_DELETION_CONSTANTS } from "../config/constants";
 
 export interface IUser extends Document {
   email: string;
@@ -42,6 +43,16 @@ export interface IUser extends Document {
   // at most one SIGcoin — the first time this user pays for a subscription.
   subscribedReferralCredited?: boolean;
   welcomedAt?: Date | null;
+  // Account deletion (Google Play / App Store 5.1.1(v)). The account stays
+  // fully usable during the grace window; only the purge job destroys data.
+  deletionRequestedAt?: Date;
+  /** requestedAt + ACCOUNT_DELETION_GRACE_DAYS. Absent means no pending request. */
+  deletionScheduledFor?: Date;
+  /** Free-text, retained for product insight only. Never returned to clients. */
+  deletionReason?: string;
+  deletionRequestedFrom?: "web" | "ios" | "android" | "unknown";
+  /** Set when the purge job claims this account; blocks a racing revocation. */
+  deletionPurgeStartedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -101,8 +112,23 @@ const UserSchema: Schema = new Schema(
     sigcoinRateUsd: { type: Number, default: SIGCOIN_RATE_USD_DEFAULT },
     subscribedReferralCredited: { type: Boolean, default: false },
     welcomedAt: { type: Date, default: null },
+    deletionRequestedAt: { type: Date },
+    deletionScheduledFor: { type: Date },
+    deletionReason: {
+      type: String,
+      maxlength: ACCOUNT_DELETION_CONSTANTS.REASON_MAX,
+    },
+    deletionRequestedFrom: {
+      type: String,
+      enum: ACCOUNT_DELETION_CONSTANTS.PLATFORMS,
+    },
+    deletionPurgeStartedAt: { type: Date },
   },
   { timestamps: true }
 );
+
+// Drives the purge job's due query. Sparse because the overwhelming majority of
+// users never request deletion.
+UserSchema.index({ deletionScheduledFor: 1 }, { sparse: true });
 
 export default mongoose.model<IUser>("User", UserSchema);

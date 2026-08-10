@@ -199,6 +199,8 @@ If `GOOGLE_CLIENT_ID` is unset, Google login **fails closed** (service unavailab
 | App boot | `GET /auth/check` | Current user, plan, prefs, balances |
 | Profile edit | `PATCH /auth/profile` | Name, username, role, phone, avatar, prefs, trade reversal |
 | Logout | `POST /auth/logout` | JWT blacklisted until natural expiry |
+| Delete account | `POST /auth/account/delete` | Schedules deletion 30 days out; nothing removed yet |
+| Undo deletion | `POST /auth/account/delete/revoke` | Cancels a pending deletion |
 
 ### 3.4 Core Daily Loop (Active Trader)
 
@@ -226,6 +228,47 @@ Pricing / Settings
 ### 3.6 Logout & Revocation
 
 Logout adds the current token to `TokenBlacklist`. Subsequent requests with that token fail even before cookie expiry. New login issues a fresh JWT.
+
+### 3.7 Account Deletion
+
+Required by Google Play's account-deletion policy and App Store Review Guideline 5.1.1(v): members must be able to start deletion from inside the product, and from the web.
+
+```
+Settings → Delete account (type DELETE to confirm)
+        │
+        ▼
+POST /auth/account/delete ──▶ deletionRequestedAt / deletionScheduledFor set
+        │                     Confirmation email (states the exact date)
+        │                     Nothing is deleted
+        ▼
+30-day grace window ── account works exactly as before
+        │             every auth payload carries `user.pendingDeletion`
+        │             webapp shows a banner on every dashboard route
+        │
+        ├── POST /auth/account/delete/revoke ──▶ cancelled, nothing lost
+        │
+        ▼
+Purge cron (daily) ──▶ final email, Apple grant revoked,
+                       personal data destroyed, money rows anonymised,
+                       User document deleted → all sessions 401
+```
+
+**Product rules**
+
+- The account stays **fully usable** during the grace window — no suspension, no muted alerts. Revoking is meant to be frictionless.
+- Re-requesting deletion is idempotent: the original date stands, so a member cannot keep an account alive by re-requesting.
+- Remaining Pro time is forfeited and not refunded. Deletion is never gated on billing state — neither store permits that.
+- Signing up again after the purge creates a brand new account; nothing is restored.
+
+**What the purge destroys vs retains**
+
+| Treatment | Data |
+|-----------|------|
+| Deleted outright | User profile, journals, signal plays, chart layouts/templates/study/drawing templates, watchlists, push installations, stock-news deliveries |
+| Retained, identity stripped | Transactions, deposits, SIGcoin ledger, referral earnings, affiliate payouts — user refs are repointed at a synthetic id so accounting still reconciles |
+| Audit record | `AccountDeletion` row: hashed email, dates, per-collection counts. No PII. |
+
+Referrers keep SIGcoins already earned; `referredBy` is cleared on any user the deleted account referred.
 
 ---
 

@@ -1,4 +1,4 @@
-import { AUTH_CONSTANTS } from "./constants";
+import { ACCOUNT_DELETION_CONSTANTS, AUTH_CONSTANTS } from "./constants";
 
 /** Accepts true/1/yes (any case); many hosts set booleans differently than lowercase "true". */
 function parseEnvTruthy(value: string | undefined): boolean {
@@ -63,6 +63,11 @@ interface EnvConfig {
   DEXTOPUS_PARTNER_FEE_RECIPIENT?: string;
   DEXTOPUS_PARTNER_FEE_BPS?: number;
   DEXTOPUS_STATUS_POLL_INTERVAL_MS: number;
+  /** Days between an account deletion request and the irreversible purge. */
+  ACCOUNT_DELETION_GRACE_DAYS: number;
+  ACCOUNT_DELETION_PURGE_CRON: string;
+  /** Kill switch for the purge cron; requests and revocations keep working. */
+  ACCOUNT_DELETION_PURGE_ENABLED: boolean;
   /** Fixed OTP bypass for one allowlisted email; never enable in public production. */
   testOtpBypassEnabled: boolean;
   testOtpEmail: string;
@@ -143,6 +148,28 @@ function validateEnv(): EnvConfig {
   );
   const dextopusStatusPollIntervalMs =
     parseOptionalInt(process.env.DEXTOPUS_STATUS_POLL_INTERVAL_MS) ?? 15000;
+
+  // Grace days must stay positive — a zero or negative value would schedule the
+  // purge in the past and delete an account the instant it is requested.
+  const configuredGraceDays = parseOptionalInt(
+    process.env.ACCOUNT_DELETION_GRACE_DAYS
+  );
+  const accountDeletionGraceDays =
+    configuredGraceDays != null && configuredGraceDays > 0
+      ? configuredGraceDays
+      : ACCOUNT_DELETION_CONSTANTS.GRACE_PERIOD_DAYS;
+  if (configuredGraceDays != null && configuredGraceDays <= 0) {
+    console.warn(
+      `⚠️  ACCOUNT_DELETION_GRACE_DAYS must be a positive integer — falling back to ${accountDeletionGraceDays}.`
+    );
+  }
+  // Defaults ON: an account deletion feature that never actually deletes would
+  // put us right back out of store compliance. Set to "false" to pause it.
+  const accountDeletionPurgeEnabled =
+    process.env.ACCOUNT_DELETION_PURGE_ENABLED == null ||
+    process.env.ACCOUNT_DELETION_PURGE_ENABLED.trim() === ""
+      ? true
+      : parseEnvTruthy(process.env.ACCOUNT_DELETION_PURGE_ENABLED);
   const googleClientIds = Array.from(
     new Set(
       [
@@ -206,6 +233,10 @@ function validateEnv(): EnvConfig {
     DEXTOPUS_PARTNER_FEE_RECIPIENT: process.env.DEXTOPUS_PARTNER_FEE_RECIPIENT,
     DEXTOPUS_PARTNER_FEE_BPS: dextopusPartnerFeeBps,
     DEXTOPUS_STATUS_POLL_INTERVAL_MS: dextopusStatusPollIntervalMs,
+    ACCOUNT_DELETION_GRACE_DAYS: accountDeletionGraceDays,
+    ACCOUNT_DELETION_PURGE_CRON:
+      process.env.ACCOUNT_DELETION_PURGE_CRON || "20 3 * * *",
+    ACCOUNT_DELETION_PURGE_ENABLED: accountDeletionPurgeEnabled,
     testOtpBypassEnabled,
     testOtpEmail,
     testOtpCode: testOtpBypassEnabled ? rawTestOtpCode : undefined,

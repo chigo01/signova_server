@@ -1,10 +1,18 @@
 import { Request, Response } from "express";
 import { AppleAuthService } from "../services/apple-auth.service";
 import { AuthService } from "../services/auth.service";
+import {
+  AccountDeletionService,
+  DeletionPlatform,
+} from "../services/accountDeletion.service";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
 import User from "../models/user.model";
-import { PROFILE_CONSTANTS } from "../config/constants";
+import {
+  ACCOUNT_DELETION_CONSTANTS,
+  PROFILE_CONSTANTS,
+} from "../config/constants";
+import { env } from "../config/env";
 import { COOKIE_NAME } from "../config/cookie";
 import { isValidTimeZone } from "../services/watchlist.service";
 import { effectivePlan } from "../services/planEntitlement.service";
@@ -35,6 +43,8 @@ function serializeUser(user: {
   plan?: "free" | "pro";
   proPlanExpiry?: Date;
   balanceUsdMicro?: number;
+  deletionRequestedAt?: Date | null;
+  deletionScheduledFor?: Date | null;
 }) {
   const prefs = user.notificationPreferences ?? {};
   return {
@@ -58,6 +68,9 @@ function serializeUser(user: {
     plan: effectivePlan(user),
     proPlanExpiry: user.proPlanExpiry,
     balanceUsdMicro: user.balanceUsdMicro ?? 0,
+    // Non-null while the account is inside its deletion grace window. Clients
+    // use this to show the "scheduled for deletion — undo?" prompt on login.
+    pendingDeletion: AccountDeletionService.deletionState(user),
   };
 }
 
@@ -253,6 +266,86 @@ export const checkAuth = asyncHandler(async (req: Request, res: Response) => {
     user: serializeUser(user),
   });
 });
+
+/**
+ * Schedules the account for deletion after the grace window. Required for
+ * Google Play's account-deletion policy and App Store guideline 5.1.1(v).
+ *
+ * Nothing is destroyed here — the account keeps working until the purge job
+ * runs, and `POST /auth/account/delete/revoke` cancels it at any point before
+ * then. Idempotent: re-requesting returns the original date.
+ */
+export const requestAccountDeletion = asyncHandler(
+  async (req: Request, res: Response) => {
+    if (!req.user) {
+      throw new AppError(401, "Unauthorized");
+    }
+
+    const { reason, platform } = req.body as {
+      reason?: unknown;
+      platform?: unknown;
+    };
+
+    let normalizedReason: string | undefined;
+    if (reason !== undefined && reason !== null && reason !== "") {
+      if (typeof reason !== "string") {
+        throw new AppError(400, "Reason must be a string");
+      }
+      const trimmed = reason.trim();
+      if (trimmed.length > ACCOUNT_DELETION_CONSTANTS.REASON_MAX) {
+        throw new AppError(
+          400,
+          `Reason must be ${ACCOUNT_DELETION_CONSTANTS.REASON_MAX} characters or fewer`
+        );
+      }
+      normalizedReason = trimmed || undefined;
+    }
+
+    let normalizedPlatform: DeletionPlatform | undefined;
+    if (platform !== undefined && platform !== null && platform !== "") {
+      const allowed = ACCOUNT_DELETION_CONSTANTS.PLATFORMS as readonly string[];
+      if (typeof platform !== "string" || !allowed.includes(platform)) {
+        throw new AppError(400, "Platform is not in the allowed list");
+      }
+      normalizedPlatform = platform as DeletionPlatform;
+    }
+
+    const pendingDeletion = await AccountDeletionService.requestDeletion(
+      req.user.userId,
+      { reason: normalizedReason, platform: normalizedPlatform }
+    );
+
+    res.status(200).json({
+      message: "Account scheduled for deletion",
+      pendingDeletion,
+      graceDays: env.ACCOUNT_DELETION_GRACE_DAYS,
+    });
+  }
+);
+
+/**
+ * Cancels a pending deletion. Succeeds whether or not one was outstanding so a
+ * double-click is harmless; `revoked` says which happened.
+ */
+export const revokeAccountDeletion = asyncHandler(
+  async (req: Request, res: Response) => {
+    if (!req.user) {
+      throw new AppError(401, "Unauthorized");
+    }
+
+    const { revoked } = await AccountDeletionService.revokeDeletion(
+      req.user.userId
+    );
+
+    res.status(200).json({
+      message: revoked
+        ? "Account deletion cancelled"
+        : "No pending deletion request",
+      revoked,
+      pendingDeletion: null,
+    });
+  }
+);
 
 export const updateProfile = asyncHandler(
   async (req: Request, res: Response) => {

@@ -26,6 +26,39 @@ export interface GoogleUserInfo {
   sub?: string;
 }
 
+/**
+ * What the login paths hand back to the controller. Deliberately a narrow
+ * projection rather than the Mongoose document, but it must carry everything
+ * `serializeUser` reads — a field missing here silently serializes as undefined
+ * on login while `/auth/check` (which loads the full document) reports it
+ * correctly.
+ */
+export interface AuthenticatedUserSummary {
+  _id: any;
+  email: string;
+  name?: string;
+  phone?: string;
+  plan: "free" | "pro";
+  proPlanExpiry?: Date;
+  balanceUsdMicro: number;
+  deletionRequestedAt?: Date;
+  deletionScheduledFor?: Date;
+}
+
+function toAuthenticatedUser(user: IUser): AuthenticatedUserSummary {
+  return {
+    _id: user._id,
+    email: user.email,
+    name: user.name,
+    phone: user.phone,
+    plan: user.plan,
+    proPlanExpiry: user.proPlanExpiry,
+    balanceUsdMicro: user.balanceUsdMicro,
+    deletionRequestedAt: user.deletionRequestedAt,
+    deletionScheduledFor: user.deletionScheduledFor,
+  };
+}
+
 export class AuthService {
   private static readonly googleOAuthClient = new OAuth2Client();
 
@@ -149,15 +182,7 @@ export class AuthService {
   static async verifyOTP(
     email: string,
     otp: string
-  ): Promise<{
-    _id: any;
-    email: string;
-    name?: string;
-    phone?: string;
-    plan: "free" | "pro";
-    proPlanExpiry?: Date;
-    balanceUsdMicro: number;
-  } | null> {
+  ): Promise<AuthenticatedUserSummary | null> {
     const normalized = email.trim().toLowerCase();
     const otpNorm = String(otp ?? "").trim();
     if (this.isTestOtpEmail(normalized) && otpNorm === env.testOtpCode) {
@@ -172,15 +197,7 @@ export class AuthService {
 
       await this.maybeSendWelcomeEmail(user);
 
-      return {
-        _id: user._id,
-        email: user.email,
-        name: user.name,
-        phone: user.phone,
-        plan: user.plan,
-        proPlanExpiry: user.proPlanExpiry,
-        balanceUsdMicro: user.balanceUsdMicro,
-      };
+      return toAuthenticatedUser(user);
     }
 
     const user = await User.findOne({ email: normalized });
@@ -200,15 +217,7 @@ export class AuthService {
 
     await this.maybeSendWelcomeEmail(user);
 
-    return {
-      _id: user._id,
-      email: user.email,
-      name: user.name,
-      phone: user.phone,
-      plan: user.plan,
-      proPlanExpiry: user.proPlanExpiry,
-      balanceUsdMicro: user.balanceUsdMicro,
-    };
+    return toAuthenticatedUser(user);
   }
 
   /**
@@ -379,15 +388,7 @@ export class AuthService {
     name: string,
     googleId: string,
     referralCode?: string
-  ): Promise<{
-    _id: any;
-    email: string;
-    name?: string;
-    phone?: string;
-    plan: "free" | "pro";
-    proPlanExpiry?: Date;
-    balanceUsdMicro: number;
-  }> {
+  ): Promise<AuthenticatedUserSummary> {
     const normalizedEmail = email.trim().toLowerCase();
     let user = await User.findOne({ email: normalizedEmail });
 
@@ -410,15 +411,7 @@ export class AuthService {
 
     await this.maybeSendWelcomeEmail(user);
 
-    return {
-      _id: user._id,
-      email: user.email,
-      name: user.name,
-      phone: user.phone,
-      plan: user.plan,
-      proPlanExpiry: user.proPlanExpiry,
-      balanceUsdMicro: user.balanceUsdMicro,
-    };
+    return toAuthenticatedUser(user);
   }
 
   static async findOrCreateAppleUser(
@@ -427,15 +420,7 @@ export class AuthService {
     name: string | undefined,
     encryptedRefreshToken: string | undefined,
     referralCode?: string
-  ): Promise<{
-    _id: any;
-    email: string;
-    name?: string;
-    phone?: string;
-    plan: "free" | "pro";
-    proPlanExpiry?: Date;
-    balanceUsdMicro: number;
-  }> {
+  ): Promise<AuthenticatedUserSummary> {
     const normalizedEmail = email?.trim().toLowerCase();
     let user = await User.findOne({ appleId }).select(
       "+appleRefreshTokenEncrypted"
@@ -487,15 +472,7 @@ export class AuthService {
     }
 
     await this.maybeSendWelcomeEmail(user);
-    return {
-      _id: user._id,
-      email: user.email,
-      name: user.name,
-      phone: user.phone,
-      plan: user.plan,
-      proPlanExpiry: user.proPlanExpiry,
-      balanceUsdMicro: user.balanceUsdMicro,
-    };
+    return toAuthenticatedUser(user);
   }
 
   /**

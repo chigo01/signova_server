@@ -125,6 +125,13 @@ Path alias: `@/*` → `src/*` (see `tsconfig.json`).
 
 `DextopusDepositSyncService.start()` runs inside the web process on boot. Changes to deposit sync affect production continuously — treat like production-critical code (idempotency, retries, status transitions).
 
+`initializeAccountDeletionCron()` (`ACCOUNT_DELETION_PURGE_CRON`, default `20 3 * * *`) runs the irreversible account purge. This is the **only** job in the codebase that destroys member data, so it gets the same scrutiny as payments:
+
+- Every step is idempotent and the account is claimed atomically (`deletionPurgeStartedAt`), so a mid-cascade restart is retried, not lost, and a racing revocation cannot half-delete an account.
+- The `User` document is removed **last**. Never reorder this — an interrupted purge must leave an account that still logs in, never a live account whose data has silently vanished.
+- `ACCOUNT_DELETION_PURGE_ENABLED=false` pauses the purge only (requests and revocations still work). Leaving it off breaks store compliance — we would be scheduling deletions we never carry out.
+- Never test against production credentials. To exercise it locally, set `ACCOUNT_DELETION_PURGE_CRON="* * * * *"` and backdate `deletionScheduledFor` on a throwaway user.
+
 ### 2.6 Ops Scripts
 
 | Script | Use |
@@ -359,6 +366,7 @@ QA validates **member journeys** against staging/production-like env, not only u
 | QA-12 | Alert webhook | Valid secret sends; invalid secret 401; duplicate no double-send |
 | QA-13 | Chart presets | Save/load layout round-trip |
 | QA-14 | Admin | Allowlisted email can access; others 403 |
+| QA-15 | Account deletion | Request sets a date 30 days out; `/auth/check` **and** login both return `pendingDeletion`; revoke clears it; purge deletes personal data, anonymises money rows, and 401s the old token |
 | QA-15 | Health | `/health` returns ok |
 
 ### 7.3 Severity Definitions
@@ -626,6 +634,8 @@ If an index build fails mid-way, fix forward — do not drop production data to 
 ### 12.4 Optional Feature Keys
 
 `FCSAPI_KEY`, `FINNHUB_API_KEY`, `ALPHAVANTAGE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Dextopus-* settings.
+
+`ACCOUNT_DELETION_GRACE_DAYS` (default 30), `ACCOUNT_DELETION_PURGE_CRON` (default `20 3 * * *`), `ACCOUNT_DELETION_PURGE_ENABLED` (defaults **on** when unset) — see §2.5.
 
 ### 12.5 Test OTP
 

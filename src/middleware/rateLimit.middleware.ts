@@ -22,7 +22,10 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 /**
- * Create a rate limiter middleware keyed by request email (falling back to IP).
+ * Create a rate limiter middleware keyed by the authenticated user, then the
+ * request email, then the IP. Authenticated routes carry no email in the body,
+ * so without the user check they would all collapse onto one shared IP bucket
+ * (and share a limit across everyone behind a NAT or mobile carrier).
  */
 const createRateLimiter = (
   maxRequests: number,
@@ -30,10 +33,11 @@ const createRateLimiter = (
   keyPrefix: string
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const email =
+    const identity =
+      req.user?.userId ||
       (typeof req.body?.email === "string" && req.body.email.toLowerCase()) ||
       req.ip;
-    const key = `${keyPrefix}:${email}`;
+    const key = `${keyPrefix}:${identity}`;
     const now = Date.now();
 
     const entry = rateLimitStore.get(key);
@@ -79,6 +83,15 @@ export const socialAuthLimiter = createRateLimiter(
   20,
   15 * 60 * 1000,
   "social-auth"
+);
+
+// Account deletion is irreversible after the grace window and sends email on
+// every state change, so it gets a tight budget. Generous enough for a user who
+// changes their mind a few times; not enough to be an email amplifier.
+export const accountDeletionLimiter = createRateLimiter(
+  10,
+  15 * 60 * 1000,
+  "account-deletion"
 );
 
 // Watchlist mutations can trigger provider validation and should not be an

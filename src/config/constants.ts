@@ -29,6 +29,20 @@ export const PROFILE_CONSTANTS = {
   EMAIL_REGEX: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/,
 } as const;
 
+export const ACCOUNT_DELETION_CONSTANTS = {
+  // Store policy (Google Play / App Store 5.1.1(v)) allows a grace period so
+  // long as deletion is actually initiated in-app and eventually completed.
+  GRACE_PERIOD_DAYS: 30,
+  REASON_MAX: 500,
+  // How many accounts one cron tick may purge. Keeps a backlog from turning a
+  // single tick into a multi-minute cascade on the web dyno.
+  PURGE_BATCH: 50,
+  // A purge that claimed an account but never finished (process restart mid
+  // cascade) is reclaimed after this long. Every purge step is idempotent.
+  STALE_PURGE_RETRY_MS: 60 * 60 * 1000,
+  PLATFORMS: ["web", "ios", "android", "unknown"] as const,
+} as const;
+
 export const FCSAPI_CONSTANTS = {
   BASE_URL: "https://api-v4.fcsapi.com/forex/latest",
   HISTORY_URL: "https://api-v4.fcsapi.com/forex/history",
