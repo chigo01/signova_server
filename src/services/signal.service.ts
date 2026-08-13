@@ -13,7 +13,11 @@ export interface PlaySignalData {
   stopLoss?: number;
 }
 
-const SIGNALS_CACHE_KEY = "elite-signals-v2";
+const SIGNALS_CACHE_PREFIX = "elite-signals-v2";
+
+function signalsCacheKey(now: Date = new Date()): string {
+  return `${SIGNALS_CACHE_PREFIX}:${now.toISOString().split("T")[0]}`;
+}
 
 /** Page size when scanning full approved history (e.g. win rate). */
 const APPROVED_HISTORY_AGG_PAGE_SIZE = 100000000;
@@ -38,7 +42,7 @@ export class SignalService {
   private static async getCachedSignals(): Promise<any | null> {
     const now = new Date();
     const cached = await SignalsCache.findOne({
-      cacheKey: SIGNALS_CACHE_KEY,
+      cacheKey: signalsCacheKey(now),
       expiresAt: { $gt: now },
     });
 
@@ -94,7 +98,9 @@ export class SignalService {
    * Called from the invalidation webhook when admin-server mutates a signal.
    */
   public static async invalidateApprovedCache(): Promise<void> {
-    await SignalsCache.deleteOne({ cacheKey: SIGNALS_CACHE_KEY });
+    await SignalsCache.deleteMany({
+      cacheKey: { $regex: `^${SIGNALS_CACHE_PREFIX}` },
+    });
   }
 
   /**
@@ -106,10 +112,11 @@ export class SignalService {
       fetchedAt.getTime() + SIGNALS_CONSTANTS.CACHE_TTL_MINUTES * 60 * 1000,
     );
 
+    const cacheKey = signalsCacheKey(fetchedAt);
     await SignalsCache.findOneAndUpdate(
-      { cacheKey: SIGNALS_CACHE_KEY },
+      { cacheKey },
       {
-        cacheKey: SIGNALS_CACHE_KEY,
+        cacheKey,
         signals,
         fetchedAt,
         expiresAt,
