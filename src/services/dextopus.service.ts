@@ -59,17 +59,72 @@ export interface SubmitDepositPayload {
   txHash: string;
 }
 
+export interface GetDepositSourcesParams {
+  destinationAssetId?: string;
+  destinationAddress?: string;
+  destinationChainId?: number;
+  supportsStaticAddress?: boolean;
+}
+
+export interface DextopusDepositSource {
+  currency?: string;
+  symbol?: string;
+  blockchain?: string;
+  sourceChainId?: number;
+  chainId?: number;
+  decimals?: number;
+  addressKind?: string | null;
+  address?: string;
+  supportsStaticAddress?: boolean;
+}
+
+export interface DextopusDepositSourceChain {
+  blockchain?: string;
+  chainId?: number;
+  addressKind?: string | null;
+  count?: number;
+  supportsStaticAddress?: boolean;
+}
+
+export interface DextopusDepositSourcesResponse {
+  success?: boolean;
+  destinationAssetId?: string;
+  destinationAddress?: string;
+  destinationAddressKind?: string | null;
+  sources?: DextopusDepositSource[];
+  sourceChains?: DextopusDepositSourceChain[];
+  count?: number;
+}
+
+export interface ValidateDepositAddressPayload {
+  chainType: string;
+  address: string;
+}
+
+export interface DextopusValidateAddressResponse {
+  success?: boolean;
+  valid?: boolean;
+  reason?: string;
+}
+
 export class DextopusService {
   private static async request<T>(
     path: string,
     init?: RequestInit
   ): Promise<T> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (env.DEXTOPUS_API_KEY) {
+      headers["X-API-Key"] = env.DEXTOPUS_API_KEY;
+    }
+    if (init?.headers) {
+      Object.assign(headers, init.headers);
+    }
+
     const response = await fetch(`${env.DEXTOPUS_BASE_URL}${path}`, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -145,5 +200,40 @@ export class DextopusService {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  }
+
+  static async getDepositSources(
+    params: GetDepositSourcesParams
+  ): Promise<DextopusDepositSourcesResponse> {
+    const query = new URLSearchParams();
+    if (params.destinationAssetId) {
+      query.set("destinationAssetId", params.destinationAssetId);
+    }
+    if (params.destinationAddress) {
+      query.set("destinationAddress", params.destinationAddress);
+    }
+    if (typeof params.destinationChainId === "number") {
+      query.set("destinationChainId", String(params.destinationChainId));
+    }
+    if (typeof params.supportsStaticAddress === "boolean") {
+      query.set("supportsStaticAddress", String(params.supportsStaticAddress));
+    }
+
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return this.request<DextopusDepositSourcesResponse>(
+      `/api/deposit/sources${suffix}`
+    );
+  }
+
+  static async validateDepositAddress(
+    payload: ValidateDepositAddressPayload
+  ): Promise<DextopusValidateAddressResponse> {
+    return this.request<DextopusValidateAddressResponse>(
+      "/api/deposit/validate-address",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
   }
 }

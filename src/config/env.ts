@@ -56,7 +56,12 @@ interface EnvConfig {
   FIREBASE_PROJECT_ID: string;
   PAYSTACK_SECRET_KEY: string;
   PAYSTACK_CALLBACK_URL?: string;
+  BACHS_API_KEY?: string;
+  BACHS_BASE_URL: string;
+  BACHS_WEBHOOK_SECRET?: string;
+  BACHS_CALLBACK_URL?: string;
   DEXTOPUS_BASE_URL: string;
+  DEXTOPUS_API_KEY?: string;
   DEXTOPUS_TREASURY_RECIPIENT?: string;
   DEXTOPUS_DESTINATION_CHAIN_ID?: number;
   DEXTOPUS_DESTINATION_ASSET?: string;
@@ -96,6 +101,8 @@ function validateEnv(): EnvConfig {
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "PAYSTACK_CALLBACK_URL",
+    "BACHS_API_KEY",
+    "DEXTOPUS_API_KEY",
     "DEXTOPUS_TREASURY_RECIPIENT",
     "DEXTOPUS_DESTINATION_CHAIN_ID",
     "DEXTOPUS_DESTINATION_ASSET",
@@ -148,6 +155,18 @@ function validateEnv(): EnvConfig {
   );
   const dextopusStatusPollIntervalMs =
     parseOptionalInt(process.env.DEXTOPUS_STATUS_POLL_INTERVAL_MS) ?? 15000;
+
+  const bachsApiKey = process.env.BACHS_API_KEY?.trim() || undefined;
+  const bachsBaseUrl =
+    process.env.BACHS_BASE_URL?.trim() ||
+    (bachsApiKey?.startsWith("sk_live_")
+      ? "https://api.bachs.io"
+      : "https://sandbox-api.bachs.io");
+  if (bachsApiKey && !process.env.BACHS_WEBHOOK_SECRET?.trim()) {
+    console.warn(
+      "⚠️  BACHS_API_KEY is set but BACHS_WEBHOOK_SECRET is missing — Bachs webhooks will be rejected."
+    );
+  }
 
   // Grace days must stay positive — a zero or negative value would schedule the
   // purge in the past and delete an account the instant it is requested.
@@ -225,8 +244,13 @@ function validateEnv(): EnvConfig {
       process.env.FIREBASE_PROJECT_ID || "signova-f7c94",
     PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY!,
     PAYSTACK_CALLBACK_URL: process.env.PAYSTACK_CALLBACK_URL,
+    BACHS_API_KEY: bachsApiKey,
+    BACHS_BASE_URL: bachsBaseUrl.replace(/\/$/, ""),
+    BACHS_WEBHOOK_SECRET: process.env.BACHS_WEBHOOK_SECRET?.trim() || undefined,
+    BACHS_CALLBACK_URL: process.env.BACHS_CALLBACK_URL?.trim() || undefined,
     DEXTOPUS_BASE_URL:
       process.env.DEXTOPUS_BASE_URL || "https://swap-api.dextopus.com",
+    DEXTOPUS_API_KEY: process.env.DEXTOPUS_API_KEY?.trim() || undefined,
     DEXTOPUS_TREASURY_RECIPIENT: process.env.DEXTOPUS_TREASURY_RECIPIENT,
     DEXTOPUS_DESTINATION_CHAIN_ID: dextopusDestinationChainId,
     DEXTOPUS_DESTINATION_ASSET: process.env.DEXTOPUS_DESTINATION_ASSET,

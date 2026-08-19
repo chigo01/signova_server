@@ -8,8 +8,22 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { effectivePlan } from "../services/planEntitlement.service";
 import { AppError } from "../middleware/errorHandler";
 import { PaystackService } from "../services/paystack.service";
+import { BachsService } from "../services/bachs.service";
 import { DextopusDepositSyncService } from "../services/dextopusDepositSync.service";
 import { DextopusService } from "../services/dextopus.service";
+import {
+  PaymentSettingsService,
+  type PaymentRail,
+} from "../services/payment-settings.service";
+import WebhookEvent from "../models/webhook-event.model";
+import {
+  DextopusQuoteService,
+  DEFAULT_SLIPPAGE_BPS,
+  coversProAmount,
+  formatAtomicAmount,
+  isDigitsOnly,
+  refundAddressHint,
+} from "../services/dextopusQuote.service";
 import {
   PRO_PLAN_AMOUNT_USD,
   PRO_PLAN_AMOUNT_USD_MICRO,
@@ -82,17 +96,92 @@ function ensureAuthenticatedUser(req: Request): string {
   return req.user.userId;
 }
 
-function isDigitsOnly(value: string): boolean {
-  return /^\d+$/.test(value);
-}
-
 function formatUsdMicro(amount: number): string {
   return (amount / 1_000_000).toFixed(6).replace(/\.?0+$/, "");
 }
 
+function requireDepositConfigured(): void {
+  if (!DextopusService.isDepositConfigured()) {
+    throw new AppError(
+      500,
+      "Stablecoin funding is not configured on the server",
+    );
+  }
+}
+
+async function requireRailEnabled(
+  rail: PaymentRail,
+  disabledMessage: string,
+): Promise<void> {
+  if (!(await PaymentSettingsService.isEnabled(rail))) {
+    throw new AppError(403, disabledMessage);
+  }
+}
+
+function bachsCallbackUrl(): string {
+  return (
+    env.BACHS_CALLBACK_URL ??
+    `${env.FRONTEND_URL.replace(/\/$/, "")}/dashboard/settings/pricing`
+  );
+}
+
+function customerDisplayName(
+  name: string | undefined,
+  email: string,
+): string {
+  const trimmed = name?.trim();
+  if (trimmed) return trimmed;
+  return email.split("@")[0]?.trim() || "Signova customer";
+}
+
+export function bachsTransactionQuery(data: {
+  checkout_id?: string | null;
+  reference?: string | null;
+}): { bachsCheckoutId: string } | { bachsReference: string } | null {
+  if (typeof data.checkout_id === "string" && data.checkout_id.trim()) {
+    return { bachsCheckoutId: data.checkout_id.trim() };
+  }
+  if (typeof data.reference === "string" && data.reference.trim()) {
+    return { bachsReference: data.reference.trim() };
+  }
+  return null;
+}
+
+function parseOrigin(body: unknown): {
+  originChainId: number;
+  originAsset: string;
+} {
+  const payload = (body ?? {}) as {
+    originChainId?: unknown;
+    originAsset?: unknown;
+  };
+  if (typeof payload.originChainId !== "number" || !Number.isFinite(payload.originChainId)) {
+    throw new AppError(400, "originChainId is required");
+  }
+  if (typeof payload.originAsset !== "string" || !payload.originAsset.trim()) {
+    throw new AppError(400, "originAsset is required");
+  }
+  return {
+    originChainId: payload.originChainId,
+    originAsset: payload.originAsset.trim(),
+  };
+}
+
+export const listPaymentMethods = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureAuthenticatedUser(req);
+    const methods = await PaymentSettingsService.getMethods();
+    res.status(200).json(methods);
+  },
+);
+
 export const generateUpgradePayment = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = ensureAuthenticatedUser(req);
+    await requireRailEnabled(
+      "paystack",
+      "Card and bank payments are currently disabled",
+    );
 
     const { planId } = req.body ?? {};
     if (!isPlanId(planId)) {
@@ -135,6 +224,7 @@ export const generateUpgradePayment = asyncHandler(
       planId,
       monthsCount: plan.months,
       status: "pending",
+      provider: "paystack",
       paystackReference: paystack.reference,
       authorizationUrl: paystack.authorizationUrl,
       expiresAt,
@@ -145,6 +235,7 @@ export const generateUpgradePayment = asyncHandler(
       transactionId: String(transaction._id),
       planId,
       monthsCount: plan.months,
+      provider: "paystack",
       authorizationUrl: paystack.authorizationUrl,
       reference: paystack.reference,
       amount: plan.priceNgn,
@@ -154,40 +245,28 @@ export const generateUpgradePayment = asyncHandler(
   },
 );
 
-export const createStablecoinDeposit = asyncHandler(
+export const generateBachsUpgradePayment = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = ensureAuthenticatedUser(req);
-
-    if (!DextopusService.isDepositConfigured()) {
-      throw new AppError(
-        500,
-        "Stablecoin funding is not configured on the server",
-      );
+    if (!BachsService.isConfigured()) {
+      throw new AppError(500, "Bachs crypto checkout is not configured");
     }
+    await requireRailEnabled(
+      "bachs",
+      "Bachs crypto checkout is currently disabled",
+    );
 
-    const {
-      originChainId,
-      originAsset,
-      amount,
-      refundTo,
-      slippageBps,
-      dry,
-      type,
-    } = req.body;
-
-    if (
-      typeof originChainId !== "number" ||
-      !originAsset ||
-      typeof originAsset !== "string" ||
-      !amount ||
-      typeof amount !== "string" ||
-      !isDigitsOnly(amount) ||
-      !refundTo ||
-      typeof refundTo !== "string"
-    ) {
+    const { planId } = req.body ?? {};
+    if (!isPlanId(planId)) {
       throw new AppError(
         400,
-        "originChainId, originAsset, amount, and refundTo are required",
+        "planId is required and must be 'pro' or 'business'",
+      );
+    }
+    if (planId !== "pro") {
+      throw new AppError(
+        400,
+        "Bachs crypto checkout is available on the Pro plan",
       );
     }
 
@@ -196,25 +275,284 @@ export const createStablecoinDeposit = asyncHandler(
       throw new AppError(404, "User not found");
     }
 
-    const depositType = "plan_upgrade";
+    const plan = PLANS[planId];
+    const reference = `signova_bachs_${planId}_${userId}_${crypto
+      .randomBytes(6)
+      .toString("hex")}`;
+    const callbackUrl = bachsCallbackUrl();
+    const expiresAt = new Date(Date.now() + PAYMENT_EXPIRY_MS);
+
+    const transaction = await Transaction.create({
+      userId,
+      amount: plan.displayUsd,
+      planId,
+      monthsCount: plan.months,
+      status: "pending",
+      provider: "bachs",
+      bachsReference: reference,
+      authorizationUrl: "pending",
+      expiresAt,
+    });
+
+    let checkout;
+    try {
+      checkout = await BachsService.createCheckoutSession({
+        email: user.email,
+        name: customerDisplayName(user.name, user.email),
+        amountUsd: plan.displayUsd,
+        reference,
+        successUrl: callbackUrl,
+        cancelUrl: callbackUrl,
+        metadata: {
+          userId: String(user._id),
+          planId,
+          monthsCount: plan.months,
+          transactionId: String(transaction._id),
+        },
+      });
+    } catch (error) {
+      transaction.status = "failed";
+      await transaction.save();
+      throw new AppError(
+        502,
+        (error as Error).message || "Failed to create Bachs checkout",
+      );
+    }
+
+    transaction.bachsCheckoutId = checkout.checkoutId;
+    transaction.authorizationUrl = checkout.checkoutUrl;
+    if (checkout.expiresAt) {
+      const parsed = new Date(checkout.expiresAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        transaction.expiresAt = parsed;
+      }
+    }
+    await transaction.save();
+
+    res.status(200).json({
+      message: "Payment initialized",
+      transactionId: String(transaction._id),
+      planId,
+      monthsCount: plan.months,
+      provider: "bachs",
+      authorizationUrl: checkout.checkoutUrl,
+      reference,
+      amount: plan.displayUsd,
+      displayUsd: plan.displayUsd,
+      expiresAt: transaction.expiresAt,
+    });
+  },
+);
+
+export const listDepositSources = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureAuthenticatedUser(req);
+    requireDepositConfigured();
+    await requireRailEnabled(
+      "dextopus",
+      "Crypto wallet payments are currently disabled",
+    );
+
+    const catalog = await DextopusQuoteService.getSources();
+    res.status(200).json({
+      requiredAmountOut: String(PRO_PLAN_AMOUNT_USD_MICRO),
+      requiredAmountUsd: PRO_PLAN_AMOUNT_USD,
+      sources: catalog.sources,
+      sourceChains: catalog.sourceChains,
+    });
+  },
+);
+
+export const previewStablecoinDeposit = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureAuthenticatedUser(req);
+    requireDepositConfigured();
+    await requireRailEnabled(
+      "dextopus",
+      "Crypto wallet payments are currently disabled",
+    );
+
+    const { originChainId, originAsset } = parseOrigin(req.body);
+    let source;
+    try {
+      source = await DextopusQuoteService.findSource(
+        originChainId,
+        originAsset,
+      );
+    } catch (error) {
+      throw new AppError(400, (error as Error).message);
+    }
+
+    let estimated;
+    try {
+      estimated = await DextopusQuoteService.estimateProAmount({
+        originChainId,
+        originAsset: source.originAsset,
+        source,
+      });
+    } catch (error) {
+      throw new AppError(
+        400,
+        (error as Error).message || "Could not quote this token for Pro",
+      );
+    }
+
+    const coversPro = coversProAmount(estimated.quote);
+    res.status(200).json({
+      originChainId,
+      originAsset: source.originAsset,
+      symbol: source.symbol,
+      blockchain: source.blockchain,
+      addressKind: source.addressKind,
+      decimals: source.decimals,
+      refundHint: refundAddressHint(source.addressKind),
+      amountIn: estimated.amountIn,
+      amountInDisplay: formatAtomicAmount(estimated.amountIn, source.decimals),
+      amountOut: estimated.quote.amountOut,
+      minAmountOut: estimated.quote.minAmountOut,
+      amountOutDisplay: estimated.quote.amountOut
+        ? formatAtomicAmount(estimated.quote.amountOut, 6)
+        : undefined,
+      coversPro,
+      requiredAmountOut: String(PRO_PLAN_AMOUNT_USD_MICRO),
+      requiredAmountUsd: PRO_PLAN_AMOUNT_USD,
+      expiresInSeconds: estimated.quote.expiresInSeconds,
+    });
+  },
+);
+
+export const validateDepositRefundAddress = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureAuthenticatedUser(req);
+    requireDepositConfigured();
+    await requireRailEnabled(
+      "dextopus",
+      "Crypto wallet payments are currently disabled",
+    );
+
+    const { originChainId, originAsset } = parseOrigin(req.body);
+    const refundTo =
+      typeof req.body?.refundTo === "string" ? req.body.refundTo.trim() : "";
+    if (!refundTo) {
+      throw new AppError(400, "refundTo is required");
+    }
+
+    let source;
+    try {
+      source = await DextopusQuoteService.findSource(
+        originChainId,
+        originAsset,
+      );
+    } catch (error) {
+      throw new AppError(400, (error as Error).message);
+    }
+    const result = await DextopusQuoteService.validateRefundAddress(
+      refundTo,
+      source.addressKind,
+    );
+    if (!result.valid) {
+      throw new AppError(400, result.reason || "Invalid refund address");
+    }
+
+    res.status(200).json({
+      valid: true,
+      addressKind: source.addressKind,
+      refundHint: refundAddressHint(source.addressKind),
+    });
+  },
+);
+
+export const createStablecoinDeposit = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    requireDepositConfigured();
+    await requireRailEnabled(
+      "dextopus",
+      "Crypto wallet payments are currently disabled",
+    );
+
+    const { originChainId, originAsset } = parseOrigin(req.body);
+    const {
+      amount,
+      refundTo,
+      slippageBps,
+    } = req.body as {
+      amount?: unknown;
+      refundTo?: unknown;
+      slippageBps?: unknown;
+    };
+
+    if (!refundTo || typeof refundTo !== "string" || !refundTo.trim()) {
+      throw new AppError(400, "refundTo is required");
+    }
+
+    if (
+      amount !== undefined &&
+      (typeof amount !== "string" || !isDigitsOnly(amount))
+    ) {
+      throw new AppError(400, "amount must be a whole number in smallest units");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new AppError(404, "User not found");
+    }
+
+    let source;
+    try {
+      source = await DextopusQuoteService.findSource(
+        originChainId,
+        originAsset,
+      );
+    } catch (error) {
+      throw new AppError(400, (error as Error).message);
+    }
+    const refundCheck = await DextopusQuoteService.validateRefundAddress(
+      refundTo,
+      source.addressKind,
+    );
+    if (!refundCheck.valid) {
+      throw new AppError(400, refundCheck.reason || "Invalid refund address");
+    }
+
+    const resolvedSlippage =
+      typeof slippageBps === "number" &&
+      slippageBps >= 0 &&
+      slippageBps <= 10000
+        ? slippageBps
+        : DEFAULT_SLIPPAGE_BPS;
+
+    let amountIn = amount;
+    if (!amountIn) {
+      try {
+        const estimated = await DextopusQuoteService.estimateProAmount({
+          originChainId,
+          originAsset: source.originAsset,
+          source,
+          refundTo: refundTo.trim(),
+          slippageBps: resolvedSlippage,
+        });
+        amountIn = estimated.amountIn;
+      } catch (error) {
+        throw new AppError(
+          400,
+          (error as Error).message || "Could not quote this token for Pro",
+        );
+      }
+    }
+
     const destination = DextopusService.getConfiguredDestination();
     const partnerFees = DextopusService.getPartnerFees();
     const quote = await DextopusService.createDepositRequest({
       originChainId,
       destinationChainId: destination.destinationChainId,
-      originAsset,
+      originAsset: source.originAsset,
       destinationAsset: destination.destinationAsset,
-      amount,
+      amount: amountIn,
       recipient: destination.recipient,
-      refundTo,
+      refundTo: refundTo.trim(),
       user: userId,
-      slippageBps:
-        typeof slippageBps === "number" &&
-        slippageBps >= 0 &&
-        slippageBps <= 10000
-          ? slippageBps
-          : 300,
-      dry: Boolean(dry),
+      slippageBps: resolvedSlippage,
       partnerFees,
     });
 
@@ -222,12 +560,7 @@ export const createStablecoinDeposit = asyncHandler(
       throw new AppError(502, "Failed to create Dextopus deposit request");
     }
 
-    if (
-      depositType === "plan_upgrade" &&
-      typeof quote.minAmountOut === "string" &&
-      isDigitsOnly(quote.minAmountOut) &&
-      Number(quote.minAmountOut) < PRO_PLAN_AMOUNT_USD_MICRO
-    ) {
+    if (!coversProAmount(quote)) {
       throw new AppError(
         400,
         `Quoted stablecoin output is below the Pro plan price of ${PRO_PLAN_AMOUNT_USD} USD`,
@@ -242,14 +575,14 @@ export const createStablecoinDeposit = asyncHandler(
     const deposit = await new Deposit({
       userId,
       provider: "dextopus",
-      type: depositType,
+      type: "plan_upgrade",
       status: "awaiting_funds",
       providerStatus: quote.status,
       originChainId,
       destinationChainId: destination.destinationChainId,
-      originAsset,
+      originAsset: source.originAsset,
       destinationAsset: destination.destinationAsset,
-      amountIn: amount,
+      amountIn,
       quotedAmountOut: quote.amountOut,
       minAmountOut: quote.minAmountOut,
       depositAddress: quote.depositAddress,
@@ -257,12 +590,9 @@ export const createStablecoinDeposit = asyncHandler(
       upstreamRequestId: quote.upstreamRequestId,
       upstreamQuoteId: quote.upstreamQuoteId,
       recipient: destination.recipient,
-      refundTo,
-      userWalletAddress: refundTo,
-      requiredAmountOut:
-        depositType === "plan_upgrade"
-          ? String(PRO_PLAN_AMOUNT_USD_MICRO)
-          : undefined,
+      refundTo: refundTo.trim(),
+      userWalletAddress: refundTo.trim(),
+      requiredAmountOut: String(PRO_PLAN_AMOUNT_USD_MICRO),
       expiresAt,
       providerPayload: quote as unknown as Record<string, unknown>,
     }).save();
@@ -275,17 +605,18 @@ export const createStablecoinDeposit = asyncHandler(
         status: deposit.status,
         originChainId: deposit.originChainId,
         originAsset: deposit.originAsset,
+        symbol: source.symbol,
+        blockchain: source.blockchain,
+        addressKind: source.addressKind,
+        decimals: source.decimals,
         amountIn: deposit.amountIn,
+        amountInDisplay: formatAtomicAmount(deposit.amountIn, source.decimals),
         quotedAmountOut: deposit.quotedAmountOut,
+        minAmountOut: deposit.minAmountOut,
         depositAddress: deposit.depositAddress,
         depositRequestId: deposit.depositRequestId,
         expiresAt: deposit.expiresAt,
         requiredAmountOut: deposit.requiredAmountOut,
-        destination: {
-          chainId: deposit.destinationChainId,
-          asset: deposit.destinationAsset,
-          recipient: deposit.recipient,
-        },
       },
     });
   },
@@ -318,6 +649,29 @@ export const getStablecoinDeposit = asyncHandler(
       throw new AppError(404, "User not found");
     }
 
+    let sourceMeta:
+      | {
+          symbol?: string;
+          blockchain?: string;
+          addressKind?: string | null;
+          decimals?: number;
+        }
+      | undefined;
+    try {
+      const source = await DextopusQuoteService.findSource(
+        syncedDeposit.originChainId,
+        syncedDeposit.originAsset,
+      );
+      sourceMeta = {
+        symbol: source.symbol,
+        blockchain: source.blockchain,
+        addressKind: source.addressKind,
+        decimals: source.decimals,
+      };
+    } catch {
+      sourceMeta = undefined;
+    }
+
     res.status(200).json({
       message: "Deposit retrieved successfully",
       deposit: {
@@ -326,7 +680,17 @@ export const getStablecoinDeposit = asyncHandler(
         status: syncedDeposit.status,
         providerStatus: syncedDeposit.providerStatus,
         executionStatus: syncedDeposit.executionStatus,
+        originChainId: syncedDeposit.originChainId,
+        originAsset: syncedDeposit.originAsset,
+        symbol: sourceMeta?.symbol,
+        blockchain: sourceMeta?.blockchain,
+        addressKind: sourceMeta?.addressKind,
+        decimals: sourceMeta?.decimals,
         amountIn: syncedDeposit.amountIn,
+        amountInDisplay:
+          sourceMeta?.decimals !== undefined
+            ? formatAtomicAmount(syncedDeposit.amountIn, sourceMeta.decimals)
+            : undefined,
         quotedAmountOut: syncedDeposit.quotedAmountOut,
         settledAmountOut: syncedDeposit.settledAmountOut,
         depositAddress: syncedDeposit.depositAddress,
@@ -348,6 +712,66 @@ export const getStablecoinDeposit = asyncHandler(
         proPlanExpiry: user.proPlanExpiry,
         balanceUsdMicro: user.balanceUsdMicro,
         balanceUsd: formatUsdMicro(user.balanceUsdMicro),
+      },
+    });
+  },
+);
+
+export const submitStablecoinDepositHash = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    requireDepositConfigured();
+    await requireRailEnabled(
+      "dextopus",
+      "Crypto wallet payments are currently disabled",
+    );
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError(400, "Invalid deposit id");
+    }
+
+    const txHash =
+      typeof req.body?.txHash === "string" ? req.body.txHash.trim() : "";
+    if (!txHash) {
+      throw new AppError(400, "txHash is required");
+    }
+
+    const deposit = await Deposit.findOne({ _id: id, userId });
+    if (!deposit) {
+      throw new AppError(404, "Deposit not found");
+    }
+
+    try {
+      await DextopusService.submitDepositTransaction({
+        depositRequestId: deposit.depositRequestId,
+        depositAddress: deposit.depositAddress,
+        txHash,
+      });
+    } catch (error) {
+      throw new AppError(
+        502,
+        (error as Error).message || "Failed to submit transaction hash",
+      );
+    }
+
+    const hashes = new Set(deposit.originTransactionHashes || []);
+    hashes.add(txHash);
+    deposit.originTransactionHashes = Array.from(hashes);
+    if (deposit.status === "awaiting_funds" || deposit.status === "pending") {
+      deposit.status = "processing";
+    }
+    await deposit.save();
+
+    const synced = await DextopusDepositSyncService.syncDeposit(deposit);
+
+    res.status(200).json({
+      message: "Transaction hash submitted",
+      txHash,
+      deposit: {
+        id: synced._id,
+        status: synced.status,
+        originTransactionHashes: synced.originTransactionHashes,
       },
     });
   },
@@ -389,23 +813,45 @@ export const getTransactionStatus = asyncHandler(
       transaction.status === "pending" &&
       transaction.expiresAt.getTime() > Date.now()
     ) {
-      try {
-        const verified = await PaystackService.verifyTransaction(
-          transaction.paystackReference,
-        );
-        if (verified.status === "success") {
-          await applySuccessfulPayment(transaction);
-        } else if (verified.status === "failed" || verified.status === "reversed") {
-          transaction.status = "failed";
-          await transaction.save();
+      if (transaction.provider === "bachs" && transaction.bachsCheckoutId) {
+        try {
+          const session = await BachsService.getCheckoutSession(
+            transaction.bachsCheckoutId,
+          );
+          if (session.chargeId && !transaction.bachsChargeId) {
+            transaction.bachsChargeId = session.chargeId;
+          }
+          if (BachsService.isSuccessfulCheckout(session)) {
+            await applySuccessfulPayment(transaction);
+          } else if (BachsService.isFailedCheckout(session)) {
+            transaction.status = "failed";
+            await transaction.save();
+          }
+        } catch (err) {
+          console.warn(
+            `Bachs verify fallback failed for ${transaction.bachsCheckoutId}:`,
+            (err as Error).message,
+          );
         }
-        // "abandoned", "ongoing", "pending" → keep transaction pending; webhook
-        // or a later poll (after user pays) or expiresAt timeout will resolve it.
-      } catch (err) {
-        console.warn(
-          `Paystack verify fallback failed for ${transaction.paystackReference}:`,
-          (err as Error).message,
-        );
+      } else if (transaction.paystackReference) {
+        try {
+          const verified = await PaystackService.verifyTransaction(
+            transaction.paystackReference,
+          );
+          if (verified.status === "success") {
+            await applySuccessfulPayment(transaction);
+          } else if (verified.status === "failed" || verified.status === "reversed") {
+            transaction.status = "failed";
+            await transaction.save();
+          }
+          // "abandoned", "ongoing", "pending" → keep transaction pending; webhook
+          // or a later poll (after user pays) or expiresAt timeout will resolve it.
+        } catch (err) {
+          console.warn(
+            `Paystack verify fallback failed for ${transaction.paystackReference}:`,
+            (err as Error).message,
+          );
+        }
       }
     }
 
@@ -421,10 +867,14 @@ export const getTransactionStatus = asyncHandler(
       status: transaction.status,
       planId: transaction.planId,
       monthsCount: transaction.monthsCount,
+      provider: transaction.provider ?? "paystack",
       amount: transaction.amount,
       displayUsd: plan?.displayUsd,
       authorizationUrl: transaction.authorizationUrl,
-      reference: transaction.paystackReference,
+      reference:
+        transaction.provider === "bachs"
+          ? transaction.bachsReference
+          : transaction.paystackReference,
       expiresAt: transaction.expiresAt,
       createdAt: transaction.createdAt,
       user: {
@@ -482,6 +932,129 @@ export const paystackWebhook = asyncHandler(
         console.log(
           `Successfully upgraded ${user?.email ?? transaction.userId} via Paystack reference ${reference}.`,
         );
+      }
+    }
+
+    res.status(200).send("OK");
+  },
+);
+
+export const bachsWebhook = asyncHandler(
+  async (req: Request, res: Response) => {
+    const rawBody = req.body as Buffer;
+    const signature = req.headers["x-bachs-signature"] as string | undefined;
+    const timestamp = req.headers["x-bachs-timestamp"] as string | undefined;
+
+    if (!Buffer.isBuffer(rawBody)) {
+      console.warn(
+        "Bachs webhook received without raw body — check express.raw mount order",
+      );
+      res.status(400).send("invalid body");
+      return;
+    }
+
+    if (
+      !BachsService.verifyWebhookSignature(
+        rawBody,
+        env.BACHS_WEBHOOK_SECRET,
+        timestamp,
+        signature,
+      )
+    ) {
+      console.warn("Bachs webhook signature mismatch");
+      res.status(401).send("invalid signature");
+      return;
+    }
+
+    let payload: {
+      id?: string;
+      type?: string;
+      data?: {
+        charge_id?: string | null;
+        checkout_id?: string | null;
+        reference?: string | null;
+        status?: string;
+        payment_method?: string;
+      };
+    };
+    try {
+      payload = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      res.status(400).send("invalid json");
+      return;
+    }
+
+    if (payload.id) {
+      const already = await WebhookEvent.findOne({ eventId: payload.id });
+      if (already) {
+        res.status(200).send("OK: duplicate");
+        return;
+      }
+    }
+
+    const type = payload.type;
+    const data = payload.data ?? {};
+    const query = bachsTransactionQuery(data);
+
+    if (
+      type === "collection.succeeded" ||
+      type === "collection.failed" ||
+      type === "collection.underpaid" ||
+      type === "checkout.expired"
+    ) {
+      if (!query) {
+        console.warn(`Bachs webhook ${type} missing checkout_id/reference`);
+        res.status(200).send("OK: missing reference");
+        return;
+      }
+
+      const transaction = await Transaction.findOne({
+        ...query,
+        provider: "bachs",
+      });
+      if (!transaction) {
+        console.warn(
+          `Bachs webhook ${type} for unknown checkout: ${JSON.stringify(query)}`,
+        );
+        res.status(200).send("OK: transaction not found");
+        return;
+      }
+
+      if (typeof data.charge_id === "string" && data.charge_id) {
+        transaction.bachsChargeId = data.charge_id;
+      }
+
+      if (type === "collection.succeeded") {
+        if (transaction.status !== "success") {
+          await applySuccessfulPayment(transaction);
+          const user = await User.findById(transaction.userId);
+          console.log(
+            `Successfully upgraded ${user?.email ?? transaction.userId} via Bachs ${transaction.bachsCheckoutId ?? transaction.bachsReference}.`,
+          );
+        }
+      } else if (type === "collection.underpaid") {
+        console.warn(
+          `Bachs checkout ${transaction.bachsCheckoutId} underpaid — not crediting`,
+        );
+        await transaction.save();
+      } else if (transaction.status !== "success") {
+        transaction.status = "failed";
+        await transaction.save();
+      }
+    }
+
+    if (payload.id) {
+      try {
+        await WebhookEvent.create({
+          provider: "bachs",
+          eventId: payload.id,
+          type: type ?? "unknown",
+        });
+      } catch (error) {
+        const code = (error as { code?: number }).code;
+        if (code !== 11000) {
+          console.warn("Failed to record Bachs webhook event:", error);
+        }
       }
     }
 
