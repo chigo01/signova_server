@@ -156,6 +156,19 @@ export function bachsTransactionQuery(data: {
   return null;
 }
 
+/** Mongo `_id` or Bachs `chk_…` from the hosted-checkout return URL. */
+export function ownedTransactionLookup(
+  userId: string,
+  id: string,
+): { _id: string; userId: string } | { bachsCheckoutId: string; userId: string } | null {
+  const value = id.trim();
+  if (!value) return null;
+  if (/^[a-fA-F0-9]{24}$/.test(value)) {
+    return { _id: value, userId };
+  }
+  return { bachsCheckoutId: value, userId };
+}
+
 function parseOrigin(body: unknown): {
   originChainId: number;
   originAsset: string;
@@ -826,12 +839,12 @@ export const getTransactionStatus = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = ensureAuthenticatedUser(req);
     const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    const query = ownedTransactionLookup(userId, id ?? "");
+    if (!query) {
       throw new AppError(400, "Invalid transaction id");
     }
 
-    const transaction = await Transaction.findOne({ _id: id, userId });
+    const transaction = await Transaction.findOne(query);
     if (!transaction) {
       throw new AppError(404, "Transaction not found");
     }

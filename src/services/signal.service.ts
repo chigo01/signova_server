@@ -19,6 +19,30 @@ function signalsCacheKey(now: Date = new Date()): string {
   return `${SIGNALS_CACHE_PREFIX}:${now.toISOString().split("T")[0]}`;
 }
 
+export function emptyApprovedSignalsPayload() {
+  return {
+    success: true,
+    signals: [],
+    eliteTrades: [],
+    count: 0,
+    totalEliteTrades: 0,
+  };
+}
+
+/** Admin-server 404s empty vault days instead of returning []. */
+export function isEmptyAdminSignalsError(
+  status: number,
+  body: string,
+): boolean {
+  if (status !== 404) return false;
+  const text = body.toLowerCase();
+  return (
+    text.includes("no elite signals") ||
+    text.includes("no signals found") ||
+    text.includes("no signals")
+  );
+}
+
 /** Page size when scanning full approved history (e.g. win rate). */
 const APPROVED_HISTORY_AGG_PAGE_SIZE = 100000000;
 const WINNING_TRADE_OUTCOMES = new Set(["TP_HIT", "TP1_HIT", "TP2_HIT"]);
@@ -81,6 +105,13 @@ export class SignalService {
 
       if (!fallbackResponse.ok) {
         const errorText = await fallbackResponse.text();
+        if (
+          isEmptyAdminSignalsError(response.status, eliteErrorText) ||
+          isEmptyAdminSignalsError(fallbackResponse.status, errorText)
+        ) {
+          console.log("ℹ️ No vault signals for today — returning an empty feed");
+          return emptyApprovedSignalsPayload();
+        }
         console.error("Admin server error:", errorText);
         throw new Error(
           `Failed to fetch signals from admin server: ${errorText}`,

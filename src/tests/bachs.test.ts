@@ -9,7 +9,10 @@ import {
   resolveBachsCallbackUrl,
   resolveBachsCustomerName,
 } from "../services/bachs.service";
-import { bachsTransactionQuery } from "../controllers/payments.controller";
+import {
+  bachsTransactionQuery,
+  ownedTransactionLookup,
+} from "../controllers/payments.controller";
 
 function signBody(
   secret: string,
@@ -264,4 +267,16 @@ test("Bachs webhook lookup prefers checkout_id then reference", () => {
     { bachsReference: "signova_bachs_1" },
   );
   assert.equal(bachsTransactionQuery({}), null);
+});
+
+test("status lookup accepts a Bachs checkout id from the return URL", () => {
+  assert.deepEqual(
+    ownedTransactionLookup("user-1", "chk_merWKkn4vfMiNwvy"),
+    { bachsCheckoutId: "chk_merWKkn4vfMiNwvy", userId: "user-1" },
+  );
+  assert.deepEqual(
+    ownedTransactionLookup("user-1", "69c2d6531e36b881862a15cd"),
+    { _id: "69c2d6531e36b881862a15cd", userId: "user-1" },
+  );
+  assert.equal(ownedTransactionLookup("user-1", "  "), null);
 });
