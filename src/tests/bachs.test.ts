@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import test from "node:test";
 import {
   BachsService,
+  BACHS_CRYPTO_MIN_USD,
   isBachsCheckoutMethod,
   parseBachsNgnAmount,
   isBachsPublicCallbackUrl,
@@ -109,6 +110,17 @@ test("Bachs crypto checkout is crypto-only", () => {
   assert.equal(payload.billing_currency, undefined);
   assert.ok(!("card" in payload.payment_method_options));
   assert.ok(!("bank_transfer" in payload.payment_method_options));
+});
+
+test("Bachs crypto checkout rejects amounts below the crypto floor", () => {
+  assert.throws(
+    () =>
+      BachsService.buildCheckoutSessionRequest({
+        ...checkoutInput("crypto"),
+        amountUsd: BACHS_CRYPTO_MIN_USD - 1,
+      }),
+    /Bachs crypto requires at least \$3\.00/,
+  );
 });
 
 test("isBachsCheckoutMethod accepts the three hosted methods only", () => {

@@ -7,6 +7,9 @@ export const BACHS_CHECKOUT_METHODS = [
   "crypto",
 ] as const;
 
+/** Below this, a crypto-only `payment_method_options` restriction leaves nothing payable. */
+export const BACHS_CRYPTO_MIN_USD = 3;
+
 export type BachsCheckoutMethod = (typeof BACHS_CHECKOUT_METHODS)[number];
 
 export function isBachsCheckoutMethod(
@@ -210,6 +213,14 @@ export class BachsService {
     if (input.paymentMethod === "bank_transfer" && !amountNgn) {
       throw new Error(
         "NGN bank transfer requires an NGN price. Set BACHS_NGN_AMOUNT or enable Bachs conversions.",
+      );
+    }
+    if (
+      input.paymentMethod === "crypto" &&
+      input.amountUsd < BACHS_CRYPTO_MIN_USD
+    ) {
+      throw new Error(
+        `Bachs crypto requires at least $${BACHS_CRYPTO_MIN_USD.toFixed(2)}. ${input.amountUsd.toFixed(2)} USD is below that floor.`,
       );
     }
 

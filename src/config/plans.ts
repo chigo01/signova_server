@@ -9,8 +9,12 @@ export interface PlanConfig {
   displayNgn: number;
 }
 
-/** Bachs live USD minimum. Restore to 39.99 after live testing. */
-export const PRO_PLAN_PRICE_USD = 1;
+/**
+ * Live-test USD price. Card accepts $1; Bachs crypto needs $3 or the
+ * crypto-only checkout is rejected as having no payable method.
+ * Restore to 39.99 after live testing.
+ */
+export const PRO_PLAN_PRICE_USD = 3;
 /** Bachs live NGN minimum. Restore with the USD price after live testing. */
 export const PRO_PLAN_PRICE_NGN = 100;
 
