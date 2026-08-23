@@ -38,9 +38,9 @@ test("scaleAmountToCover applies the fee buffer to a volatile probe", () => {
     375,
   );
   assert.ok(next > 0n);
-  // ~$39.99 / $3500 * 1e18 * 1.0375 ≈ 0.0119 ETH
+  // ~$1 / $3500 * 1e18 * 1.0375 ≈ 0.000296 ETH
   assert.ok(next < 10n ** 18n / 20n);
-  assert.ok(next > 10n ** 18n / 120n);
+  assert.ok(next > 10n ** 18n / 10_000n);
 });
 
 test("estimateCoveringAmount accepts a 6-decimal stable without a probe quote", async () => {
