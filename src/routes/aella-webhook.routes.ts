@@ -1,12 +1,12 @@
 import { Router, raw } from "express";
-import { paystackWebhook } from "../controllers/payments.controller";
+import { aellaWebhook } from "../controllers/payments.controller";
 
 const router: Router = Router();
 
 router.post(
   "/",
   raw({ type: "application/json", limit: "1mb" }),
-  paystackWebhook,
+  aellaWebhook,
 );
 
 export default router;

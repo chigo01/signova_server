@@ -15,18 +15,18 @@ import { PRO_PLAN_AMOUNT_USD_MICRO } from "../services/subscription.service";
 
 const REQUIRED = BigInt(PRO_PLAN_AMOUNT_USD_MICRO);
 
-test("stable estimator covers $100 after fees for 6-decimal USDC", () => {
+test("stable estimator covers the Pro price after fees for 6-decimal USDC", () => {
   const feeBps = totalFeeBps(0, 300);
   const amountIn = estimateStableAmountIn(6, feeBps, REQUIRED);
-  assert.ok(amountIn > REQUIRED, "must send more than $100 to cover fees");
+  assert.ok(amountIn > REQUIRED, "must send more than the Pro price to cover fees");
   // 25 + 300 + 50 = 375 bps ≈ 3.75%
   assert.ok(amountIn < REQUIRED + REQUIRED / 10n, "buffer stays modest");
 });
 
-test("18-decimal stable scales to 100 whole tokens plus fees", () => {
+test("18-decimal stable scales to the Pro price plus fees", () => {
   const amountIn = estimateStableAmountIn(18, 0, REQUIRED);
-  // 100 * 10^18 with 0 extra bps, converted from 6-decimal micro-USD
-  assert.equal(amountIn, 100n * 10n ** 18n);
+  // micro-USD (6 decimals) scaled up to 18-decimal tokens
+  assert.equal(amountIn, REQUIRED * 10n ** 12n);
 });
 
 test("scaleAmountToCover applies the fee buffer to a volatile probe", () => {
@@ -38,9 +38,9 @@ test("scaleAmountToCover applies the fee buffer to a volatile probe", () => {
     375,
   );
   assert.ok(next > 0n);
-  // 100 / 3500 * 1e18 * 1.0375 ≈ 0.0296 ETH
+  // ~$39.99 / $3500 * 1e18 * 1.0375 ≈ 0.0119 ETH
   assert.ok(next < 10n ** 18n / 20n);
-  assert.ok(next > 10n ** 18n / 50n);
+  assert.ok(next > 10n ** 18n / 120n);
 });
 
 test("estimateCoveringAmount accepts a 6-decimal stable without a probe quote", async () => {
@@ -63,7 +63,7 @@ test("estimateCoveringAmount accepts a 6-decimal stable without a probe quote", 
   assert.ok(BigInt(result.amountIn) >= REQUIRED);
 });
 
-test("estimateCoveringAmount probes a non-stable then lands above $100", async () => {
+test("estimateCoveringAmount probes a non-stable then lands above the Pro price", async () => {
   const result = await estimateCoveringAmount({
     decimals: 18,
     symbol: "ETH",

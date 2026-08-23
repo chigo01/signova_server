@@ -1,6 +1,8 @@
 import mongoose, { Document, Schema } from "mongoose";
 
-export type ReferralEarningPlanId = "pro" | "business";
+import type { HistoricalPlanId } from "../config/plans";
+
+export type ReferralEarningPlanId = HistoricalPlanId;
 export type ReferralEarningStatus = "pending" | "available" | "paid";
 
 export interface IReferralEarning extends Document {

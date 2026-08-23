@@ -61,17 +61,17 @@ export const getPaymentSettings = asyncHandler(
 export const updatePaymentSettings = asyncHandler(
   async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as {
-      paystack?: unknown;
       dextopus?: unknown;
       bachs?: unknown;
+      aella?: unknown;
     };
     const patch: {
-      paystack?: boolean;
       dextopus?: boolean;
       bachs?: boolean;
+      aella?: boolean;
     } = {};
 
-    for (const key of ["paystack", "dextopus", "bachs"] as const) {
+    for (const key of ["dextopus", "bachs", "aella"] as const) {
       if (body[key] === undefined) continue;
       if (typeof body[key] !== "boolean") {
         throw new AppError(400, `${key} must be a boolean`);

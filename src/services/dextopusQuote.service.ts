@@ -1,5 +1,8 @@
 import { DextopusService, DextopusDepositQuoteResponse } from "./dextopus.service";
-import { PRO_PLAN_AMOUNT_USD_MICRO } from "./subscription.service";
+import {
+  PRO_PLAN_AMOUNT_USD,
+  PRO_PLAN_AMOUNT_USD_MICRO,
+} from "./subscription.service";
 
 export const PROTOCOL_FEE_BPS = 25;
 export const DEFAULT_SLIPPAGE_BPS = 300;
@@ -128,7 +131,7 @@ export function estimateStableAmountIn(
 ): bigint {
   const safeDecimals = Number.isFinite(decimals) && decimals >= 0 ? decimals : 6;
   // Destination settlement is priced in micro-USD (6 decimals). If the origin
-  // stable uses a different scale, convert so 100 USD is still 100 units.
+  // stable uses a different scale, convert so the Pro price is still that many units.
   const scaleDiff = BigInt(safeDecimals - 6);
   const requiredInOrigin =
     scaleDiff >= 0n
@@ -205,7 +208,7 @@ export async function estimateCoveringAmount(params: {
   }
 
   throw new Error(
-    "Quoted output is below the Pro plan price of 100 USD. Try a different token.",
+    `Quoted output is below the Pro plan price of ${PRO_PLAN_AMOUNT_USD} USD. Try a different token.`,
   );
 }
 

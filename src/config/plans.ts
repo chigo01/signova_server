@@ -1,16 +1,21 @@
-export type PlanId = "pro" | "business";
+export type PlanId = "pro";
+/** Kept so historical transactions and referral rows still type-check. */
+export type HistoricalPlanId = "pro" | "business";
 
 export interface PlanConfig {
-  priceNgn: number;
   months: number;
   displayUsd: number;
 }
 
+export const PRO_PLAN_PRICE_USD = 39.99;
+
 export const PLANS: Record<PlanId, PlanConfig> = {
-  pro: { priceNgn: 100, months: 1, displayUsd: 100 },
-  business: { priceNgn: 200, months: 2, displayUsd: 200 },
+  pro: {
+    months: 1,
+    displayUsd: PRO_PLAN_PRICE_USD,
+  },
 };
 
 export function isPlanId(value: unknown): value is PlanId {
-  return value === "pro" || value === "business";
+  return value === "pro";
 }

@@ -4,9 +4,11 @@ export const PAYMENT_SETTINGS_KEY = "default";
 
 export interface IPaymentSettings extends Document {
   key: string;
-  paystackEnabled: boolean;
   dextopusEnabled: boolean;
   bachsEnabled: boolean;
+  aellaEnabled: boolean;
+  /** Bumped when a one-time settings backfill has been applied. */
+  settingsRevision: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,9 +21,10 @@ const PaymentSettingsSchema = new Schema(
       unique: true,
       default: PAYMENT_SETTINGS_KEY,
     },
-    paystackEnabled: { type: Boolean, required: true, default: true },
     dextopusEnabled: { type: Boolean, required: true, default: true },
     bachsEnabled: { type: Boolean, required: true, default: true },
+    aellaEnabled: { type: Boolean, required: true, default: true },
+    settingsRevision: { type: Number, required: true, default: 0 },
   },
   { timestamps: true },
 );

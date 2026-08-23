@@ -1,7 +1,64 @@
 import crypto from "crypto";
 import { env } from "../config/env";
 
-export const BACHS_CRYPTO_METHODS = ["crypto"] as const;
+export const BACHS_CHECKOUT_METHODS = [
+  "bank_transfer",
+  "card",
+  "crypto",
+] as const;
+
+export type BachsCheckoutMethod = (typeof BACHS_CHECKOUT_METHODS)[number];
+
+export function isBachsCheckoutMethod(
+  value: unknown,
+): value is BachsCheckoutMethod {
+  return (
+    typeof value === "string" &&
+    (BACHS_CHECKOUT_METHODS as readonly string[]).includes(value)
+  );
+}
+
+export type BachsPaymentMethodOptions =
+  | { card: { currencies: ["USD", "NGN"] } }
+  | { card: { currencies: ["USD"] } }
+  | { bank_transfer: Record<string, never> }
+  | { crypto: Record<string, never> };
+
+export type BachsPricing = {
+  currency: "USD";
+  amount: string;
+  currency_options?: { NGN: string };
+};
+
+/** Bachs NGN minimum is 100. Returns a 2-decimal string or null. */
+export function parseBachsNgnAmount(value: unknown): string | null {
+  const raw =
+    typeof value === "number" && Number.isFinite(value)
+      ? value.toFixed(2)
+      : typeof value === "string"
+        ? value.trim()
+        : "";
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) return null;
+  const amount = Number(raw);
+  if (!Number.isFinite(amount) || amount < 100) return null;
+  return amount.toFixed(2);
+}
+
+export function bachsPaymentMethodOptions(
+  method: BachsCheckoutMethod,
+  amountNgn?: string,
+): BachsPaymentMethodOptions {
+  switch (method) {
+    case "card":
+      return amountNgn
+        ? { card: { currencies: ["USD", "NGN"] } }
+        : { card: { currencies: ["USD"] } };
+    case "bank_transfer":
+      return { bank_transfer: {} };
+    case "crypto":
+      return { crypto: {} };
+  }
+}
 
 export interface BachsCheckoutCustomer {
   email: string;
@@ -12,6 +69,7 @@ export interface BachsCheckoutMetadata {
   userId: string;
   planId: string;
   monthsCount: number;
+  paymentMethod?: BachsCheckoutMethod;
   transactionId?: string;
 }
 
@@ -19,6 +77,9 @@ export interface CreateBachsCheckoutInput {
   email: string;
   name: string;
   amountUsd: number;
+  /** Required for bank_transfer; optional for card so NGN cards can be offered. */
+  amountNgn?: string;
+  paymentMethod: BachsCheckoutMethod;
   reference: string;
   successUrl: string;
   cancelUrl: string;
@@ -46,8 +107,9 @@ export interface BachsCheckoutSession {
 }
 
 export interface BachsCheckoutSessionRequest {
-  pricing: { currency: "USD"; amount: string };
-  allowed_payment_method_types: typeof BACHS_CRYPTO_METHODS;
+  pricing: BachsPricing;
+  payment_method_options: BachsPaymentMethodOptions;
+  billing_currency?: "NGN";
   customer: BachsCheckoutCustomer;
   success_url: string;
   cancel_url: string;
@@ -57,9 +119,62 @@ export interface BachsCheckoutSessionRequest {
 }
 
 const WEBHOOK_TOLERANCE_SECONDS = 300;
+const BACHS_PRICING_PATH = "/dashboard/settings/pricing";
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
+
+export function isBachsPublicCallbackUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (LOCAL_HOSTS.has(host)) return false;
+    if (host.endsWith(".localhost") || host.endsWith(".local")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function withPricingPath(origin: string): string {
+  return `${origin.replace(/\/$/, "")}${BACHS_PRICING_PATH}`;
+}
+
+export function resolveBachsCallbackUrl(options: {
+  explicit?: string;
+  frontendUrl: string;
+  frontendUrls: string[];
+}): string {
+  const candidates = [
+    options.explicit?.trim(),
+    ...options.frontendUrls.map(withPricingPath),
+    withPricingPath(options.frontendUrl),
+  ].filter((url): url is string => Boolean(url));
+
+  const publicUrl = candidates.find(isBachsPublicCallbackUrl);
+  if (!publicUrl) {
+    throw new Error(
+      "Bachs requires a public https success URL. Set BACHS_CALLBACK_URL (localhost is not allowed).",
+    );
+  }
+  return publicUrl;
+}
 
 function formatUsdAmount(amountUsd: number): string {
   return amountUsd.toFixed(2);
+}
+
+function bachsPricing(
+  amountUsd: number,
+  amountNgn?: string,
+): BachsPricing {
+  if (amountNgn) {
+    return {
+      currency: "USD",
+      amount: formatUsdAmount(amountUsd),
+      currency_options: { NGN: amountNgn },
+    };
+  }
+  return { currency: "USD", amount: formatUsdAmount(amountUsd) };
 }
 
 function customerNameFromEmail(email: string): string {
@@ -80,15 +195,33 @@ export class BachsService {
     return Boolean(env.BACHS_API_KEY);
   }
 
+  static resolveCallbackUrl(): string {
+    return resolveBachsCallbackUrl({
+      explicit: env.BACHS_CALLBACK_URL,
+      frontendUrl: env.FRONTEND_URL,
+      frontendUrls: env.FRONTEND_URLS,
+    });
+  }
+
   static buildCheckoutSessionRequest(
     input: CreateBachsCheckoutInput,
   ): BachsCheckoutSessionRequest {
+    const amountNgn = parseBachsNgnAmount(input.amountNgn) ?? undefined;
+    if (input.paymentMethod === "bank_transfer" && !amountNgn) {
+      throw new Error(
+        "NGN bank transfer requires an NGN price. Set BACHS_NGN_AMOUNT or enable Bachs conversions.",
+      );
+    }
+
     return {
-      pricing: {
-        currency: "USD",
-        amount: formatUsdAmount(input.amountUsd),
-      },
-      allowed_payment_method_types: [...BACHS_CRYPTO_METHODS],
+      pricing: bachsPricing(input.amountUsd, amountNgn),
+      payment_method_options: bachsPaymentMethodOptions(
+        input.paymentMethod,
+        amountNgn,
+      ),
+      ...(input.paymentMethod === "bank_transfer"
+        ? { billing_currency: "NGN" as const }
+        : {}),
       customer: {
         email: input.email,
         name: resolveBachsCustomerName(input.name, input.email),
@@ -101,10 +234,57 @@ export class BachsService {
     };
   }
 
+  static async quoteUsdToNgn(amountUsd: number): Promise<string> {
+    const json = await this.request<{ to_amount?: unknown }>(
+      "/v1/conversions/quotes",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          from_currency: "USD",
+          to_currency: "NGN",
+          amount: formatUsdAmount(amountUsd),
+        }),
+      },
+    );
+    const amountNgn = parseBachsNgnAmount(json.to_amount);
+    if (!amountNgn) {
+      throw new Error("Bachs conversion quote did not return a usable NGN amount");
+    }
+    return amountNgn;
+  }
+
+  static async resolveNgnAmount(amountUsd: number): Promise<string> {
+    const configured = parseBachsNgnAmount(env.BACHS_NGN_AMOUNT);
+    if (configured) return configured;
+    return this.quoteUsdToNgn(amountUsd);
+  }
+
+  static async withNgnAmount(
+    input: CreateBachsCheckoutInput,
+  ): Promise<CreateBachsCheckoutInput> {
+    if (input.amountNgn || input.paymentMethod === "crypto") {
+      return input;
+    }
+    if (input.paymentMethod === "bank_transfer") {
+      return { ...input, amountNgn: await this.resolveNgnAmount(input.amountUsd) };
+    }
+    try {
+      return { ...input, amountNgn: await this.resolveNgnAmount(input.amountUsd) };
+    } catch (error) {
+      console.warn(
+        "Could not add an NGN price to the card checkout:",
+        (error as Error).message,
+      );
+      return input;
+    }
+  }
+
   static async createCheckoutSession(
     input: CreateBachsCheckoutInput,
   ): Promise<CreateBachsCheckoutResult> {
-    const payload = this.buildCheckoutSessionRequest(input);
+    const payload = this.buildCheckoutSessionRequest(
+      await this.withNgnAmount(input),
+    );
     const json = await this.request<{
       checkout_id?: string;
       checkout_url?: string;
@@ -237,9 +417,22 @@ export class BachsService {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Bachs API error for ${path}:`, errorText);
-      throw new Error(`Bachs API error: ${response.status} ${response.statusText}`);
+      throw new Error(`Bachs API error: ${bachsErrorDetail(errorText, response)}`);
     }
 
     return (await response.json()) as T;
   }
+}
+
+function bachsErrorDetail(errorText: string, response: Response): string {
+  try {
+    const parsed = JSON.parse(errorText) as { detail?: unknown };
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail.trim();
+    }
+  } catch {
+    // fall through to the HTTP status
+  }
+  if (errorText.trim()) return errorText.trim();
+  return `${response.status} ${response.statusText}`;
 }

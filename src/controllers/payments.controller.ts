@@ -7,8 +7,16 @@ import User from "../models/user.model";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { effectivePlan } from "../services/planEntitlement.service";
 import { AppError } from "../middleware/errorHandler";
-import { PaystackService } from "../services/paystack.service";
-import { BachsService } from "../services/bachs.service";
+import {
+  BachsService,
+  isBachsCheckoutMethod,
+} from "../services/bachs.service";
+import {
+  AellaService,
+  aellaAmountsMatch,
+  isFailedAellaStatus,
+  isSuccessfulAellaStatus,
+} from "../services/aella.service";
 import { DextopusDepositSyncService } from "../services/dextopusDepositSync.service";
 import { DextopusService } from "../services/dextopus.service";
 import {
@@ -65,7 +73,7 @@ export async function applySuccessfulPayment(
   // Atomically claim the transaction: flip pending/failed → success in a single
   // findOneAndUpdate gated on `status !== "success"`. Only the caller that wins
   // the claim gets a document back and proceeds to credit. Concurrent callers —
-  // the webhook, the client-driven status poll, and Paystack webhook retries —
+  // the webhook, the client-driven status poll, and webhook retries —
   // that lose the race get null and skip, preventing the subscription from being
   // extended twice for one payment (audit H1). The in-memory guard this replaces
   // could not prevent this: each caller loaded its own doc and all saw "pending".
@@ -119,10 +127,11 @@ async function requireRailEnabled(
 }
 
 function bachsCallbackUrl(): string {
-  return (
-    env.BACHS_CALLBACK_URL ??
-    `${env.FRONTEND_URL.replace(/\/$/, "")}/dashboard/settings/pricing`
-  );
+  try {
+    return BachsService.resolveCallbackUrl();
+  } catch (error) {
+    throw new AppError(400, (error as Error).message);
+  }
 }
 
 function customerDisplayName(
@@ -175,98 +184,25 @@ export const listPaymentMethods = asyncHandler(
   },
 );
 
-export const generateUpgradePayment = asyncHandler(
-  async (req: Request, res: Response) => {
-    const userId = ensureAuthenticatedUser(req);
-    await requireRailEnabled(
-      "paystack",
-      "Card and bank payments are currently disabled",
-    );
-
-    const { planId } = req.body ?? {};
-    if (!isPlanId(planId)) {
-      throw new AppError(
-        400,
-        "planId is required and must be 'pro' or 'business'",
-      );
-    }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new AppError(404, "User not found");
-    }
-
-    const plan = PLANS[planId];
-    const reference = `signova_${planId}_${userId}_${crypto
-      .randomBytes(6)
-      .toString("hex")}`;
-    const callbackUrl =
-      env.PAYSTACK_CALLBACK_URL ??
-      `${env.FRONTEND_URL.replace(/\/$/, "")}/dashboard/settings/pricing`;
-
-    const paystack = await PaystackService.initializeTransaction({
-      email: user.email,
-      amountNgn: plan.priceNgn,
-      reference,
-      callbackUrl,
-      metadata: {
-        userId: String(user._id),
-        planId,
-        monthsCount: plan.months,
-      },
-    });
-
-    const expiresAt = new Date(Date.now() + PAYMENT_EXPIRY_MS);
-
-    const transaction = await Transaction.create({
-      userId,
-      amount: plan.priceNgn,
-      planId,
-      monthsCount: plan.months,
-      status: "pending",
-      provider: "paystack",
-      paystackReference: paystack.reference,
-      authorizationUrl: paystack.authorizationUrl,
-      expiresAt,
-    });
-
-    res.status(200).json({
-      message: "Payment initialized",
-      transactionId: String(transaction._id),
-      planId,
-      monthsCount: plan.months,
-      provider: "paystack",
-      authorizationUrl: paystack.authorizationUrl,
-      reference: paystack.reference,
-      amount: plan.priceNgn,
-      displayUsd: plan.displayUsd,
-      expiresAt,
-    });
-  },
-);
-
 export const generateBachsUpgradePayment = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = ensureAuthenticatedUser(req);
     if (!BachsService.isConfigured()) {
-      throw new AppError(500, "Bachs crypto checkout is not configured");
+      throw new AppError(500, "Bachs checkout is not configured");
     }
     await requireRailEnabled(
       "bachs",
-      "Bachs crypto checkout is currently disabled",
+      "Bachs checkout is currently disabled",
     );
 
-    const { planId } = req.body ?? {};
+    const { planId, paymentMethod } = req.body ?? {};
     if (!isPlanId(planId)) {
-      throw new AppError(
-        400,
-        "planId is required and must be 'pro' or 'business'",
-      );
+      throw new AppError(400, "planId is required and must be 'pro'");
     }
-    if (planId !== "pro") {
+    if (!isBachsCheckoutMethod(paymentMethod)) {
       throw new AppError(
         400,
-        "Bachs crypto checkout is available on the Pro plan",
+        "paymentMethod is required and must be 'card', 'bank_transfer', or 'crypto'",
       );
     }
 
@@ -290,6 +226,7 @@ export const generateBachsUpgradePayment = asyncHandler(
       status: "pending",
       provider: "bachs",
       bachsReference: reference,
+      bachsPaymentMethod: paymentMethod,
       authorizationUrl: "pending",
       expiresAt,
     });
@@ -300,6 +237,7 @@ export const generateBachsUpgradePayment = asyncHandler(
         email: user.email,
         name: customerDisplayName(user.name, user.email),
         amountUsd: plan.displayUsd,
+        paymentMethod,
         reference,
         successUrl: callbackUrl,
         cancelUrl: callbackUrl,
@@ -307,6 +245,7 @@ export const generateBachsUpgradePayment = asyncHandler(
           userId: String(user._id),
           planId,
           monthsCount: plan.months,
+          paymentMethod,
           transactionId: String(transaction._id),
         },
       });
@@ -335,10 +274,98 @@ export const generateBachsUpgradePayment = asyncHandler(
       planId,
       monthsCount: plan.months,
       provider: "bachs",
+      bachsPaymentMethod: paymentMethod,
       authorizationUrl: checkout.checkoutUrl,
       reference,
       amount: plan.displayUsd,
       displayUsd: plan.displayUsd,
+      expiresAt: transaction.expiresAt,
+    });
+  },
+);
+
+export const generateAellaUpgradePayment = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = ensureAuthenticatedUser(req);
+    if (!AellaService.isConfigured()) {
+      throw new AppError(500, "Aella NGN checkout is not configured");
+    }
+    await requireRailEnabled(
+      "aella",
+      "Aella NGN bank transfer is currently disabled",
+    );
+
+    const { planId } = req.body ?? {};
+    if (!isPlanId(planId)) {
+      throw new AppError(400, "planId is required and must be 'pro'");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new AppError(404, "User not found");
+    }
+
+    const plan = PLANS[planId];
+    let amountNgn: string;
+    try {
+      amountNgn = await BachsService.resolveNgnAmount(plan.displayUsd);
+    } catch (error) {
+      throw new AppError(
+        502,
+        (error as Error).message || "Could not price NGN bank transfer",
+      );
+    }
+
+    const expiresAt = new Date(Date.now() + PAYMENT_EXPIRY_MS);
+    const transaction = await Transaction.create({
+      userId,
+      amount: plan.displayUsd,
+      planId,
+      monthsCount: plan.months,
+      status: "pending",
+      provider: "aella",
+      authorizationUrl: "in-app",
+      aellaAmountNgn: Number(amountNgn),
+      expiresAt,
+    });
+
+    let account;
+    try {
+      account = await AellaService.createDynamicVirtualAccount({
+        accountName: "Signova Pro",
+        amountNgn,
+      });
+    } catch (error) {
+      transaction.status = "failed";
+      await transaction.save();
+      throw new AppError(
+        502,
+        (error as Error).message || "Failed to create Aella virtual account",
+      );
+    }
+
+    transaction.aellaWalletId = account.id;
+    transaction.aellaAccountNumber = account.accountNumber;
+    transaction.aellaAccountName = account.accountName;
+    transaction.aellaBankName = account.bankName;
+    transaction.aellaAmountNgn = account.amountNgn;
+    transaction.expiresAt = account.expiresAt;
+    await transaction.save();
+
+    res.status(200).json({
+      message: "Payment initialized",
+      transactionId: String(transaction._id),
+      planId,
+      monthsCount: plan.months,
+      provider: "aella",
+      authorizationUrl: "in-app",
+      reference: account.accountNumber,
+      amount: plan.displayUsd,
+      displayUsd: plan.displayUsd,
+      amountNgn: account.amountNgn,
+      accountNumber: account.accountNumber,
+      accountName: account.accountName,
+      bankName: account.bankName,
       expiresAt: transaction.expiresAt,
     });
   },
@@ -833,22 +860,26 @@ export const getTransactionStatus = asyncHandler(
             (err as Error).message,
           );
         }
-      } else if (transaction.paystackReference) {
+      } else if (
+        transaction.provider === "aella" &&
+        transaction.aellaAccountNumber
+      ) {
         try {
-          const verified = await PaystackService.verifyTransaction(
-            transaction.paystackReference,
+          const inward = await AellaService.getDynamicAccountTransaction(
+            transaction.aellaAccountNumber,
           );
-          if (verified.status === "success") {
+          if (
+            isSuccessfulAellaStatus(inward.status) &&
+            aellaAmountsMatch(transaction.aellaAmountNgn ?? 0, inward.amount)
+          ) {
             await applySuccessfulPayment(transaction);
-          } else if (verified.status === "failed" || verified.status === "reversed") {
+          } else if (isFailedAellaStatus(inward.status)) {
             transaction.status = "failed";
             await transaction.save();
           }
-          // "abandoned", "ongoing", "pending" → keep transaction pending; webhook
-          // or a later poll (after user pays) or expiresAt timeout will resolve it.
         } catch (err) {
           console.warn(
-            `Paystack verify fallback failed for ${transaction.paystackReference}:`,
+            `Aella verify fallback failed for ${transaction.aellaAccountNumber}:`,
             (err as Error).message,
           );
         }
@@ -860,21 +891,27 @@ export const getTransactionStatus = asyncHandler(
       throw new AppError(404, "User not found");
     }
 
-    const plan = PLANS[transaction.planId];
+    const plan =
+      transaction.planId === "pro" ? PLANS.pro : undefined;
 
     res.status(200).json({
       id: String(transaction._id),
       status: transaction.status,
       planId: transaction.planId,
       monthsCount: transaction.monthsCount,
-      provider: transaction.provider ?? "paystack",
+      provider: transaction.provider ?? "bachs",
+      bachsPaymentMethod: transaction.bachsPaymentMethod,
       amount: transaction.amount,
       displayUsd: plan?.displayUsd,
+      amountNgn: transaction.aellaAmountNgn,
+      accountNumber: transaction.aellaAccountNumber,
+      accountName: transaction.aellaAccountName,
+      bankName: transaction.aellaBankName,
       authorizationUrl: transaction.authorizationUrl,
       reference:
-        transaction.provider === "bachs"
-          ? transaction.bachsReference
-          : transaction.paystackReference,
+        transaction.aellaAccountNumber ??
+        transaction.bachsReference ??
+        transaction.paystackReference,
       expiresAt: transaction.expiresAt,
       createdAt: transaction.createdAt,
       user: {
@@ -882,60 +919,6 @@ export const getTransactionStatus = asyncHandler(
         proPlanExpiry: user.proPlanExpiry,
       },
     });
-  },
-);
-
-export const paystackWebhook = asyncHandler(
-  async (req: Request, res: Response) => {
-    const rawBody = req.body as Buffer;
-    const signature = req.headers["x-paystack-signature"] as string | undefined;
-
-    if (!Buffer.isBuffer(rawBody)) {
-      console.warn(
-        "Paystack webhook received without raw body — check express.raw mount order",
-      );
-      res.status(400).send("invalid body");
-      return;
-    }
-
-    if (!PaystackService.verifyWebhookSignature(rawBody, signature)) {
-      console.warn("Paystack webhook signature mismatch");
-      res.status(401).send("invalid signature");
-      return;
-    }
-
-    let payload: { event?: string; data?: { reference?: string } };
-    try {
-      payload = JSON.parse(rawBody.toString("utf8"));
-    } catch {
-      res.status(400).send("invalid json");
-      return;
-    }
-
-    if (payload.event === "charge.success") {
-      const reference = payload.data?.reference;
-      if (!reference) {
-        res.status(200).send("OK: missing reference");
-        return;
-      }
-      const transaction = await Transaction.findOne({
-        paystackReference: reference,
-      });
-      if (!transaction) {
-        console.warn(`Webhook received for unknown reference: ${reference}`);
-        res.status(200).send("OK: transaction not found");
-        return;
-      }
-      if (transaction.status !== "success") {
-        await applySuccessfulPayment(transaction);
-        const user = await User.findById(transaction.userId);
-        console.log(
-          `Successfully upgraded ${user?.email ?? transaction.userId} via Paystack reference ${reference}.`,
-        );
-      }
-    }
-
-    res.status(200).send("OK");
   },
 );
 
@@ -1054,6 +1037,137 @@ export const bachsWebhook = asyncHandler(
         const code = (error as { code?: number }).code;
         if (code !== 11000) {
           console.warn("Failed to record Bachs webhook event:", error);
+        }
+      }
+    }
+
+    res.status(200).send("OK");
+  },
+);
+
+export function aellaInwardsAccountNumber(data: {
+  receiverAccountNumber?: string | null;
+  sourceWallet?: string | null;
+}): string | null {
+  if (
+    typeof data.receiverAccountNumber === "string" &&
+    data.receiverAccountNumber.trim()
+  ) {
+    return data.receiverAccountNumber.trim();
+  }
+  return null;
+}
+
+export const aellaWebhook = asyncHandler(
+  async (req: Request, res: Response) => {
+    const rawBody = req.body as Buffer;
+    const signature = req.headers["x-aella-signature"] as string | undefined;
+
+    if (!Buffer.isBuffer(rawBody)) {
+      console.warn(
+        "Aella webhook received without raw body — check express.raw mount order",
+      );
+      res.status(400).send("invalid body");
+      return;
+    }
+
+    if (
+      !AellaService.verifyWebhookSignature(
+        rawBody,
+        env.AELLA_SECRET_KEY,
+        signature,
+      )
+    ) {
+      console.warn("Aella webhook signature mismatch");
+      res.status(401).send("invalid signature");
+      return;
+    }
+
+    let payload: {
+      event?: string;
+      data?: {
+        id?: string | null;
+        amount?: number | string | null;
+        status?: string | null;
+        receiverAccountNumber?: string | null;
+        sourceWallet?: string | null;
+      };
+    };
+    try {
+      payload = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      res.status(400).send("invalid json");
+      return;
+    }
+
+    const eventId =
+      typeof payload.data?.id === "string" && payload.data.id.trim()
+        ? `aella:${payload.data.id.trim()}`
+        : null;
+    if (eventId) {
+      const already = await WebhookEvent.findOne({ eventId });
+      if (already) {
+        res.status(200).send("OK: duplicate");
+        return;
+      }
+    }
+
+    const type = payload.event;
+    const data = payload.data ?? {};
+    const accountNumber = aellaInwardsAccountNumber(data);
+
+    if (type === "inwards.completed" || type === "inwards.failed") {
+      if (!accountNumber) {
+        console.warn(`Aella webhook ${type} missing receiverAccountNumber`);
+        res.status(200).send("OK: missing account");
+        return;
+      }
+
+      const transaction = await Transaction.findOne({
+        aellaAccountNumber: accountNumber,
+        provider: "aella",
+      });
+      if (!transaction) {
+        console.warn(`Aella webhook ${type} for unknown account ${accountNumber}`);
+        res.status(200).send("OK: transaction not found");
+        return;
+      }
+
+      if (typeof data.id === "string" && data.id) {
+        transaction.aellaInwardsId = data.id;
+      }
+
+      if (type === "inwards.completed") {
+        if (
+          !aellaAmountsMatch(transaction.aellaAmountNgn ?? 0, data.amount)
+        ) {
+          console.warn(
+            `Aella inward ${accountNumber} amount mismatch: expected ${transaction.aellaAmountNgn}, got ${data.amount}`,
+          );
+        } else if (transaction.status !== "success") {
+          await applySuccessfulPayment(transaction);
+          const user = await User.findById(transaction.userId);
+          console.log(
+            `Successfully upgraded ${user?.email ?? transaction.userId} via Aella ${accountNumber}.`,
+          );
+        }
+      } else if (transaction.status !== "success") {
+        transaction.status = "failed";
+        await transaction.save();
+      }
+    }
+
+    if (eventId) {
+      try {
+        await WebhookEvent.create({
+          provider: "aella",
+          eventId,
+          type: type ?? "unknown",
+        });
+      } catch (error) {
+        const code = (error as { code?: number }).code;
+        if (code !== 11000) {
+          console.warn("Failed to record Aella webhook event:", error);
         }
       }
     }

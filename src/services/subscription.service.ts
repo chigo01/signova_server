@@ -1,7 +1,8 @@
+import { PRO_PLAN_PRICE_USD } from "../config/plans";
 import User from "../models/user.model";
 
-export const PRO_PLAN_AMOUNT_USD = 100;
-export const PRO_PLAN_AMOUNT_USD_MICRO = PRO_PLAN_AMOUNT_USD * 1_000_000;
+export const PRO_PLAN_AMOUNT_USD = PRO_PLAN_PRICE_USD;
+export const PRO_PLAN_AMOUNT_USD_MICRO = Math.round(PRO_PLAN_AMOUNT_USD * 1_000_000);
 export const PRO_PLAN_DURATION_DAYS = 30;
 
 export class SubscriptionService {

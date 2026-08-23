@@ -135,7 +135,7 @@ export class ReferralService {
 
   /**
    * Award a referrer 1 SIGcoin the first time their referral subscribes. Safe
-   * to call from any subscription path (Paystack, crypto). Idempotent per
+   * to call from any subscription path (crypto checkout). Idempotent per
    * referred user via the `subscribedReferralCredited` flag. Never throws.
    */
   static async creditSubscribedReferral(

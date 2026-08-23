@@ -2,11 +2,11 @@ import PaymentSettings, {
   IPaymentSettings,
   PAYMENT_SETTINGS_KEY,
 } from "../models/payment-settings.model";
-import { env } from "../config/env";
 import { DextopusService } from "./dextopus.service";
 import { BachsService } from "./bachs.service";
+import { AellaService } from "./aella.service";
 
-export type PaymentRail = "paystack" | "dextopus" | "bachs";
+export type PaymentRail = "dextopus" | "bachs" | "aella";
 
 export interface RailStatus {
   enabled: boolean;
@@ -16,36 +16,69 @@ export interface RailStatus {
 
 export type PaymentMethods = Record<PaymentRail, RailStatus>;
 
+/** Stored admin intent defaults to on. Customer `enabled` still requires keys. */
+export const PAYMENT_SETTINGS_REVISION = 2;
+
 const RAIL_LABELS: Record<PaymentRail, string> = {
-  paystack: "Card / bank (Paystack)",
   dextopus: "Crypto wallet (Dextopus)",
-  bachs: "Crypto checkout (Bachs)",
+  bachs: "Card, Naira & crypto (Bachs)",
+  aella: "NGN bank transfer (Aella)",
 };
+
+export function nextPaymentSettingsBackfill(doc: {
+  bachsEnabled: boolean;
+  aellaEnabled?: boolean;
+  settingsRevision?: number;
+}): {
+  bachsEnabled: boolean;
+  aellaEnabled: boolean;
+  settingsRevision: number;
+} | null {
+  if ((doc.settingsRevision ?? 0) >= PAYMENT_SETTINGS_REVISION) {
+    return null;
+  }
+  return {
+    bachsEnabled:
+      (doc.settingsRevision ?? 0) >= 1 ? doc.bachsEnabled : true,
+    aellaEnabled: true,
+    settingsRevision: PAYMENT_SETTINGS_REVISION,
+  };
+}
 
 export class PaymentSettingsService {
   static isConfigured(rail: PaymentRail): boolean {
     switch (rail) {
-      case "paystack":
-        return Boolean(env.PAYSTACK_SECRET_KEY);
       case "dextopus":
         return DextopusService.isDepositConfigured();
       case "bachs":
         return BachsService.isConfigured();
+      case "aella":
+        return AellaService.isConfigured();
     }
   }
 
   static async getDocument(): Promise<IPaymentSettings> {
     const existing = await PaymentSettings.findOne({ key: PAYMENT_SETTINGS_KEY });
-    if (existing) return existing;
+    if (existing) {
+      const backfill = nextPaymentSettingsBackfill(existing);
+      if (backfill) {
+        existing.bachsEnabled = backfill.bachsEnabled;
+        existing.aellaEnabled = backfill.aellaEnabled;
+        existing.settingsRevision = backfill.settingsRevision;
+        await existing.save();
+      }
+      return existing;
+    }
 
     const created = await PaymentSettings.findOneAndUpdate(
       { key: PAYMENT_SETTINGS_KEY },
       {
         $setOnInsert: {
           key: PAYMENT_SETTINGS_KEY,
-          paystackEnabled: true,
-          dextopusEnabled: this.isConfigured("dextopus"),
-          bachsEnabled: this.isConfigured("bachs"),
+          dextopusEnabled: true,
+          bachsEnabled: true,
+          aellaEnabled: true,
+          settingsRevision: PAYMENT_SETTINGS_REVISION,
         },
       },
       { new: true, upsert: true },
@@ -59,9 +92,9 @@ export class PaymentSettingsService {
   static async getMethods(): Promise<PaymentMethods> {
     const doc = await this.getDocument();
     return {
-      paystack: this.railStatus("paystack", doc.paystackEnabled),
       dextopus: this.railStatus("dextopus", doc.dextopusEnabled),
       bachs: this.railStatus("bachs", doc.bachsEnabled),
+      aella: this.railStatus("aella", doc.aellaEnabled),
     };
   }
 
@@ -71,20 +104,16 @@ export class PaymentSettingsService {
   }
 
   static async update(patch: {
-    paystack?: boolean;
     dextopus?: boolean;
     bachs?: boolean;
+    aella?: boolean;
   }): Promise<PaymentMethods> {
     const updates: Partial<{
-      paystackEnabled: boolean;
       dextopusEnabled: boolean;
       bachsEnabled: boolean;
+      aellaEnabled: boolean;
     }> = {};
 
-    if (patch.paystack !== undefined) {
-      this.assertCanEnable("paystack", patch.paystack);
-      updates.paystackEnabled = patch.paystack;
-    }
     if (patch.dextopus !== undefined) {
       this.assertCanEnable("dextopus", patch.dextopus);
       updates.dextopusEnabled = patch.dextopus;
@@ -92,6 +121,10 @@ export class PaymentSettingsService {
     if (patch.bachs !== undefined) {
       this.assertCanEnable("bachs", patch.bachs);
       updates.bachsEnabled = patch.bachs;
+    }
+    if (patch.aella !== undefined) {
+      this.assertCanEnable("aella", patch.aella);
+      updates.aellaEnabled = patch.aella;
     }
 
     await this.getDocument();

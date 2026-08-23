@@ -13,7 +13,7 @@
     "watch": "tsc --watch",
     "push:test": "node dist/scripts/testPush.js",
     "stocknews:test": "node dist/scripts/testStockNewsAlert.js",
-    "test": "tsc && MONGO_URI=mongodb://localhost/test JWT_SECRET=test-secret PAYSTACK_SECRET_KEY=test-paystack RESEND_API_KEY=re_test node --test dist/tests/*.test.js",
+    "test": "tsc && MONGO_URI=mongodb://localhost/test JWT_SECRET=test-secret RESEND_API_KEY=re_test node --test dist/tests/*.test.js",
     "postinstall": "echo \"postinstall skipped (use pnpm build)\""
   },
   "keywords": [

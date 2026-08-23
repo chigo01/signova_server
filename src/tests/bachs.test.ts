@@ -3,6 +3,10 @@ import crypto from "node:crypto";
 import test from "node:test";
 import {
   BachsService,
+  isBachsCheckoutMethod,
+  parseBachsNgnAmount,
+  isBachsPublicCallbackUrl,
+  resolveBachsCallbackUrl,
   resolveBachsCustomerName,
 } from "../services/bachs.service";
 import { bachsTransactionQuery } from "../controllers/payments.controller";
@@ -18,25 +22,100 @@ function signBody(
     .digest("hex");
 }
 
-test("Bachs checkout request is crypto-only and priced in USD decimal strings", () => {
-  const payload = BachsService.buildCheckoutSessionRequest({
+function checkoutInput(
+  paymentMethod: "card" | "bank_transfer" | "crypto",
+  amountNgn?: string,
+) {
+  return {
     email: "jane@example.com",
     name: "Jane Doe",
-    amountUsd: 100,
+    amountUsd: 39.99,
+    amountNgn,
+    paymentMethod,
     reference: "signova_bachs_pro_user_abc",
     successUrl: "https://app.example.com/pricing",
     cancelUrl: "https://app.example.com/pricing",
-    metadata: { userId: "u1", planId: "pro", monthsCount: 1 },
-  });
+    metadata: { userId: "u1", planId: "pro", monthsCount: 1 as const },
+  };
+}
 
-  assert.deepEqual(payload.allowed_payment_method_types, ["crypto"]);
-  assert.equal(payload.pricing.currency, "USD");
-  assert.equal(payload.pricing.amount, "100.00");
-  assert.equal(payload.customer.email, "jane@example.com");
-  assert.equal(payload.customer.name, "Jane Doe");
-  assert.ok(!JSON.stringify(payload).includes("card"));
-  assert.ok(!JSON.stringify(payload).includes("bank_transfer"));
+test("Bachs card checkout offers USD and NGN cards when an NGN price is present", () => {
+  const payload = BachsService.buildCheckoutSessionRequest(
+    checkoutInput("card", "53986.50"),
+  );
+
+  assert.deepEqual(payload.payment_method_options, {
+    card: { currencies: ["USD", "NGN"] },
+  });
+  assert.deepEqual(payload.pricing, {
+    currency: "USD",
+    amount: "39.99",
+    currency_options: { NGN: "53986.50" },
+  });
+  assert.equal(payload.billing_currency, undefined);
+  assert.ok(!("bank_transfer" in payload.payment_method_options));
+  assert.ok(!("crypto" in payload.payment_method_options));
   assert.ok(!JSON.stringify(payload).includes("mobile_money"));
+  assert.ok(!("allowed_payment_method_types" in payload));
+});
+
+test("Bachs card checkout falls back to USD-only when NGN is missing", () => {
+  const payload = BachsService.buildCheckoutSessionRequest(checkoutInput("card"));
+  assert.deepEqual(payload.payment_method_options, {
+    card: { currencies: ["USD"] },
+  });
+  assert.deepEqual(payload.pricing, { currency: "USD", amount: "39.99" });
+});
+
+test("Bachs bank-transfer checkout adds an NGN price before locking billing to NGN", () => {
+  const payload = BachsService.buildCheckoutSessionRequest(
+    checkoutInput("bank_transfer", "53986.50"),
+  );
+
+  assert.deepEqual(payload.payment_method_options, { bank_transfer: {} });
+  assert.deepEqual(payload.pricing, {
+    currency: "USD",
+    amount: "39.99",
+    currency_options: { NGN: "53986.50" },
+  });
+  assert.equal(payload.billing_currency, "NGN");
+  assert.ok(!("card" in payload.payment_method_options));
+  assert.ok(!("crypto" in payload.payment_method_options));
+});
+
+test("Bachs bank-transfer checkout rejects a USD-only payload", () => {
+  assert.throws(
+    () => BachsService.buildCheckoutSessionRequest(checkoutInput("bank_transfer")),
+    /NGN bank transfer requires an NGN price/,
+  );
+});
+
+test("parseBachsNgnAmount accepts Bachs decimal strings at or above 100", () => {
+  assert.equal(parseBachsNgnAmount("53986.5"), "53986.50");
+  assert.equal(parseBachsNgnAmount(100), "100.00");
+  assert.equal(parseBachsNgnAmount("99.99"), null);
+  assert.equal(parseBachsNgnAmount("not-a-price"), null);
+});
+
+test("Bachs crypto checkout is crypto-only", () => {
+  const payload = BachsService.buildCheckoutSessionRequest(
+    checkoutInput("crypto"),
+  );
+
+  assert.deepEqual(payload.payment_method_options, { crypto: {} });
+  assert.equal(payload.billing_currency, undefined);
+  assert.ok(!("card" in payload.payment_method_options));
+  assert.ok(!("bank_transfer" in payload.payment_method_options));
+});
+
+test("isBachsCheckoutMethod accepts the three hosted methods only", () => {
+  assert.equal(isBachsCheckoutMethod("card"), true);
+  assert.equal(isBachsCheckoutMethod("bank_transfer"), true);
+  assert.equal(isBachsCheckoutMethod("crypto"), true);
+  assert.equal(isBachsCheckoutMethod("mobile_money"), false);
+  assert.equal(isBachsCheckoutMethod("paystack"), false);
+  assert.equal(isBachsCheckoutMethod(""), false);
+  assert.equal(isBachsCheckoutMethod(undefined), false);
 });
 
 test("Bachs customer name falls back to the email local part", () => {
@@ -137,6 +216,38 @@ test("successful Bachs checkouts credit; underpaid and failed do not", () => {
       raw: {},
     }),
     false,
+  );
+});
+
+test("Bachs callback URL skips localhost and uses the first public https origin", () => {
+  assert.equal(isBachsPublicCallbackUrl("http://localhost:3001/dashboard/settings/pricing"), false);
+  assert.equal(isBachsPublicCallbackUrl("https://web.signova.app/dashboard/settings/pricing"), true);
+  assert.equal(
+    resolveBachsCallbackUrl({
+      frontendUrl: "http://localhost:3001",
+      frontendUrls: [
+        "http://localhost:3005",
+        "http://localhost:3001",
+        "https://web.signova.app",
+      ],
+    }),
+    "https://web.signova.app/dashboard/settings/pricing",
+  );
+  assert.equal(
+    resolveBachsCallbackUrl({
+      explicit: "https://app.signova.app/dashboard/settings/pricing",
+      frontendUrl: "http://localhost:3001",
+      frontendUrls: ["https://web.signova.app"],
+    }),
+    "https://app.signova.app/dashboard/settings/pricing",
+  );
+  assert.throws(
+    () =>
+      resolveBachsCallbackUrl({
+        frontendUrl: "http://localhost:3001",
+        frontendUrls: ["http://127.0.0.1:3001"],
+      }),
+    /public https success URL/,
   );
 });
 

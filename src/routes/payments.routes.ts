@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
-  generateUpgradePayment,
   generateBachsUpgradePayment,
+  generateAellaUpgradePayment,
   listPaymentMethods,
   createStablecoinDeposit,
   getStablecoinDeposit,
@@ -17,8 +17,8 @@ import { verifyToken } from "../middleware/auth.middleware";
 const router: Router = Router();
 
 router.get("/methods", verifyToken, listPaymentMethods);
-router.post("/upgrade", verifyToken, generateUpgradePayment);
 router.post("/upgrade/bachs", verifyToken, generateBachsUpgradePayment);
+router.post("/upgrade/aella", verifyToken, generateAellaUpgradePayment);
 router.get("/transactions/:id", verifyToken, getTransactionStatus);
 router.get("/deposits/sources", verifyToken, listDepositSources);
 router.post("/deposits/preview", verifyToken, previewStablecoinDeposit);

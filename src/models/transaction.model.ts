@@ -1,7 +1,13 @@
 import mongoose, { Document, Schema } from "mongoose";
+import type { HistoricalPlanId } from "../config/plans";
 
-export type TransactionPlanId = "pro" | "business";
-export type TransactionProvider = "paystack" | "bachs";
+export type TransactionPlanId = HistoricalPlanId;
+/** `paystack` is historical only; new checkouts are Bachs or Aella. */
+export type TransactionProvider = "bachs" | "paystack" | "aella";
+export type TransactionBachsPaymentMethod =
+  | "bank_transfer"
+  | "card"
+  | "crypto";
 
 export interface ITransaction extends Document {
   userId: mongoose.Types.ObjectId;
@@ -14,6 +20,13 @@ export interface ITransaction extends Document {
   bachsCheckoutId?: string;
   bachsReference?: string;
   bachsChargeId?: string;
+  bachsPaymentMethod?: TransactionBachsPaymentMethod;
+  aellaWalletId?: string;
+  aellaAccountNumber?: string;
+  aellaAccountName?: string;
+  aellaBankName?: string;
+  aellaAmountNgn?: number;
+  aellaInwardsId?: string;
   authorizationUrl: string;
   expiresAt: Date;
   createdAt: Date;
@@ -37,8 +50,8 @@ const TransactionSchema: Schema = new Schema(
     },
     provider: {
       type: String,
-      enum: ["paystack", "bachs"],
-      default: "paystack",
+      enum: ["bachs", "paystack", "aella"],
+      default: "bachs",
       required: true,
       index: true,
     },
@@ -61,6 +74,21 @@ const TransactionSchema: Schema = new Schema(
       index: true,
     },
     bachsChargeId: { type: String },
+    bachsPaymentMethod: {
+      type: String,
+      enum: ["bank_transfer", "card", "crypto"],
+    },
+    aellaWalletId: { type: String },
+    aellaAccountNumber: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+    aellaAccountName: { type: String },
+    aellaBankName: { type: String },
+    aellaAmountNgn: { type: Number },
+    aellaInwardsId: { type: String },
     authorizationUrl: { type: String, required: true },
     expiresAt: { type: Date, required: true },
   },

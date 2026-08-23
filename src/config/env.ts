@@ -54,12 +54,14 @@ interface EnvConfig {
   ANTHROPIC_API_KEY?: string;
   FIREBASE_PUSH_ENABLED: boolean;
   FIREBASE_PROJECT_ID: string;
-  PAYSTACK_SECRET_KEY: string;
-  PAYSTACK_CALLBACK_URL?: string;
   BACHS_API_KEY?: string;
   BACHS_BASE_URL: string;
   BACHS_WEBHOOK_SECRET?: string;
   BACHS_CALLBACK_URL?: string;
+  /** Optional list NGN price for Pro. When unset, bank transfer quotes USD→NGN. */
+  BACHS_NGN_AMOUNT?: string;
+  AELLA_SECRET_KEY?: string;
+  AELLA_BASE_URL: string;
   DEXTOPUS_BASE_URL: string;
   DEXTOPUS_API_KEY?: string;
   DEXTOPUS_TREASURY_RECIPIENT?: string;
@@ -86,7 +88,7 @@ function parseOptionalInt(value: string | undefined): number | undefined {
 }
 
 function validateEnv(): EnvConfig {
-  const required = ["MONGO_URI", "JWT_SECRET", "PAYSTACK_SECRET_KEY"];
+  const required = ["MONGO_URI", "JWT_SECRET"];
   const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
@@ -100,8 +102,8 @@ function validateEnv(): EnvConfig {
     "ALPHAVANTAGE_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "PAYSTACK_CALLBACK_URL",
     "BACHS_API_KEY",
+    "AELLA_SECRET_KEY",
     "DEXTOPUS_API_KEY",
     "DEXTOPUS_TREASURY_RECIPIENT",
     "DEXTOPUS_DESTINATION_CHAIN_ID",
@@ -242,12 +244,15 @@ function validateEnv(): EnvConfig {
     FIREBASE_PUSH_ENABLED: parseEnvTruthy(process.env.FIREBASE_PUSH_ENABLED),
     FIREBASE_PROJECT_ID:
       process.env.FIREBASE_PROJECT_ID || "signova-f7c94",
-    PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY!,
-    PAYSTACK_CALLBACK_URL: process.env.PAYSTACK_CALLBACK_URL,
     BACHS_API_KEY: bachsApiKey,
     BACHS_BASE_URL: bachsBaseUrl.replace(/\/$/, ""),
     BACHS_WEBHOOK_SECRET: process.env.BACHS_WEBHOOK_SECRET?.trim() || undefined,
     BACHS_CALLBACK_URL: process.env.BACHS_CALLBACK_URL?.trim() || undefined,
+    BACHS_NGN_AMOUNT: process.env.BACHS_NGN_AMOUNT?.trim() || undefined,
+    AELLA_SECRET_KEY: process.env.AELLA_SECRET_KEY?.trim() || undefined,
+    AELLA_BASE_URL: (
+      process.env.AELLA_BASE_URL?.trim() || "https://api.aellaapp.com"
+    ).replace(/\/$/, ""),
     DEXTOPUS_BASE_URL:
       process.env.DEXTOPUS_BASE_URL || "https://swap-api.dextopus.com",
     DEXTOPUS_API_KEY: process.env.DEXTOPUS_API_KEY?.trim() || undefined,
