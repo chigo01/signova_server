@@ -9,6 +9,7 @@ export interface SendEmailParams {
   subject: string;
   html: string;
   from?: string;
+  replyTo?: string;
 }
 
 // Throws when Resend rejects the send (rate limit, bad address, domain issue)
@@ -21,13 +22,20 @@ export async function sendEmail({
   subject,
   html,
   from = FROM_EMAIL,
+  replyTo,
 }: SendEmailParams): Promise<void> {
   if (!env.RESEND_API_KEY) {
     console.log(`[DEV ONLY] Email to ${to} skipped (no RESEND_API_KEY): ${subject}`);
     return;
   }
 
-  const { error } = await resend.emails.send({ from, to, subject, html });
+  const { error } = await resend.emails.send({
+    from,
+    to,
+    subject,
+    html,
+    ...(replyTo ? { replyTo } : {}),
+  });
   if (error) {
     console.error("Resend Error:", error);
     throw new Error(`Resend send failed: ${error.message ?? String(error)}`);

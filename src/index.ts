@@ -22,11 +22,14 @@ import chartPresetRoutes from "./routes/chartPreset.routes";
 import referralRoutes from "./routes/referral.routes";
 import adminRoutes from "./routes/admin.routes";
 import pushRoutes from "./routes/push.routes";
+import webinarRoutes from "./routes/webinar.routes";
 import { DextopusDepositSyncService } from "./services/dextopusDepositSync.service";
 import { ensureTransactionIndexes } from "./models/transaction.model";
 import { initializeStockNewsCron } from "./services/stockNewsCron.service";
 import { initializeAccountDeletionCron } from "./services/accountDeletionCron.service";
 import { errorHandler } from "./middleware/errorHandler";
+import { ensureWebinarRegistrationIndexes } from "./models/webinarRegistration.model";
+import { ensureWebinarDrawIndexes } from "./models/webinarDraw.model";
 
 const app = express();
 
@@ -68,6 +71,7 @@ app.use("/chart-presets", chartPresetRoutes);
 app.use("/referrals", referralRoutes);
 app.use("/admin", adminRoutes);
 app.use("/push", pushRoutes);
+app.use("/webinar", webinarRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({ message: "Welcome to the Signova API!" });
@@ -83,6 +87,8 @@ app.use(errorHandler);
 async function startServer(): Promise<void> {
   await connectDB();
   await ensureTransactionIndexes();
+  await ensureWebinarRegistrationIndexes();
+  await ensureWebinarDrawIndexes();
   DextopusDepositSyncService.start();
   initializeStockNewsCron();
   initializeAccountDeletionCron();

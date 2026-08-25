@@ -30,10 +30,12 @@ setInterval(() => {
 const createRateLimiter = (
   maxRequests: number,
   windowMs: number,
-  keyPrefix: string
+  keyPrefix: string,
+  keyResolver?: (req: Request) => string | undefined
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const identity =
+      keyResolver?.(req) ||
       req.user?.userId ||
       (typeof req.body?.email === "string" && req.body.email.toLowerCase()) ||
       req.ip;
@@ -100,4 +102,21 @@ export const watchlistMutationLimiter = createRateLimiter(
   30,
   60 * 1000,
   "watchlist-mutation",
+);
+
+export const webinarRegistrationLimiter = createRateLimiter(
+  5,
+  15 * 60 * 1000,
+  "webinar-registration",
+  (req) =>
+    typeof req.body?.email === "string"
+      ? req.body.email.trim().toLowerCase()
+      : undefined
+);
+
+export const raffleAdminLoginLimiter = createRateLimiter(
+  5,
+  15 * 60 * 1000,
+  "raffle-admin-login",
+  (req) => req.header("x-webinar-client-ip")?.trim() || req.ip
 );

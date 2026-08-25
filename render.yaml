@@ -30,3 +30,15 @@ services:
       # GOOGLE_APPLICATION_CREDENTIALS to its /etc/secrets/... path.
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
+      - key: WEBINAR_SERVICE_SECRET
+        sync: false
+      - key: WEBINAR_MEET_URL
+        sync: false
+      - key: WEBINAR_NOTIFY_EMAIL
+        sync: false
+      - key: WEBINAR_FROM_EMAIL
+        sync: false
+      - key: RAFFLE_ADMIN_PASSWORD
+        sync: false
+      - key: RAFFLE_ADMIN_SESSION_SECRET
+        sync: false

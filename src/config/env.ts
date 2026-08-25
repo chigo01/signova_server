@@ -33,6 +33,13 @@ interface EnvConfig {
   SIGNALS_ALERT_SECRET?: string;
   /** Shared secret sent to admin-server when reading approved/elite signals. */
   SIGNALS_READ_SECRET?: string;
+  /** Shared secret accepted only from the webinar Worker. */
+  WEBINAR_SERVICE_SECRET?: string;
+  WEBINAR_MEET_URL?: string;
+  WEBINAR_NOTIFY_EMAIL?: string;
+  WEBINAR_FROM_EMAIL?: string;
+  RAFFLE_ADMIN_PASSWORD?: string;
+  RAFFLE_ADMIN_SESSION_SECRET?: string;
   RESEND_API_KEY?: string;
   FCSAPI_KEY?: string;
   /** OAuth client IDs whose Google tokens may authenticate with Signova. */
@@ -221,6 +228,13 @@ function validateEnv(): EnvConfig {
     SIGNALS_INVALIDATE_SECRET: process.env.SIGNALS_INVALIDATE_SECRET,
     SIGNALS_ALERT_SECRET: process.env.SIGNALS_ALERT_SECRET,
     SIGNALS_READ_SECRET: process.env.SIGNALS_READ_SECRET,
+    WEBINAR_SERVICE_SECRET: process.env.WEBINAR_SERVICE_SECRET?.trim() || undefined,
+    WEBINAR_MEET_URL: process.env.WEBINAR_MEET_URL?.trim() || undefined,
+    WEBINAR_NOTIFY_EMAIL: process.env.WEBINAR_NOTIFY_EMAIL?.trim() || undefined,
+    WEBINAR_FROM_EMAIL: process.env.WEBINAR_FROM_EMAIL?.trim() || undefined,
+    RAFFLE_ADMIN_PASSWORD: process.env.RAFFLE_ADMIN_PASSWORD || undefined,
+    RAFFLE_ADMIN_SESSION_SECRET:
+      process.env.RAFFLE_ADMIN_SESSION_SECRET?.trim() || undefined,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     FCSAPI_KEY: process.env.FCSAPI_KEY,
     GOOGLE_CLIENT_IDS: googleClientIds,
