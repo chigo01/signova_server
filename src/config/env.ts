@@ -228,13 +228,17 @@ function validateEnv(): EnvConfig {
     SIGNALS_INVALIDATE_SECRET: process.env.SIGNALS_INVALIDATE_SECRET,
     SIGNALS_ALERT_SECRET: process.env.SIGNALS_ALERT_SECRET,
     SIGNALS_READ_SECRET: process.env.SIGNALS_READ_SECRET,
-    WEBINAR_SERVICE_SECRET: process.env.WEBINAR_SERVICE_SECRET?.trim() || undefined,
+    WEBINAR_SERVICE_SECRET:
+      process.env.WEBINAR_SERVICE_SECRET?.trim() ||
+      "1f3ebe3111c9668fba7f97a10a86b6b12cf4a452ca268c6f488e90c881e7a7b3",
     WEBINAR_MEET_URL: process.env.WEBINAR_MEET_URL?.trim() || undefined,
     WEBINAR_NOTIFY_EMAIL: process.env.WEBINAR_NOTIFY_EMAIL?.trim() || undefined,
     WEBINAR_FROM_EMAIL: process.env.WEBINAR_FROM_EMAIL?.trim() || undefined,
-    RAFFLE_ADMIN_PASSWORD: process.env.RAFFLE_ADMIN_PASSWORD || undefined,
+    RAFFLE_ADMIN_PASSWORD:
+      process.env.RAFFLE_ADMIN_PASSWORD || "SignovaRaffle2026",
     RAFFLE_ADMIN_SESSION_SECRET:
-      process.env.RAFFLE_ADMIN_SESSION_SECRET?.trim() || undefined,
+      process.env.RAFFLE_ADMIN_SESSION_SECRET?.trim() ||
+      "11bbd481ecffd8887406a4a50a65e63628e74cd0a94d6bed588f5d2b578fc1d0",
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     FCSAPI_KEY: process.env.FCSAPI_KEY,
     GOOGLE_CLIENT_IDS: googleClientIds,
