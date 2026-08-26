@@ -16,10 +16,14 @@ import { sendEmail } from "./email/email.service";
 import {
   webinarConfirmationEmail,
   webinarInternalNotificationEmail,
+  webinarReminderEmail,
 } from "./email/templates/webinar";
 
 export const RAFFLE_TOKEN_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const RAFFLE_WINNER_COUNT = 6;
+/** Saturday 29 Aug 2026, 12:00 PM WAT. */
+export const WEBINAR_START_AT = new Date("2026-08-29T11:00:00.000Z");
+export const WEBINAR_REMINDER_LEAD_MS = 30 * 60 * 1000;
 const TOKEN_CREATE_ATTEMPTS = 10;
 const ADMIN_SESSION_SECONDS = 4 * 60 * 60;
 
@@ -302,6 +306,97 @@ async function sendInternalNotification(
   }
 }
 
+export function isWebinarReminderWindow(now: Date = new Date()): boolean {
+  const start = WEBINAR_START_AT.getTime();
+  const open = start - WEBINAR_REMINDER_LEAD_MS;
+  const time = now.getTime();
+  return time >= open && time < start;
+}
+
+async function sendReminder(
+  registration: IWebinarRegistration,
+  config: ReturnType<typeof requiredEmailConfig>
+): Promise<boolean> {
+  const attemptedAt = new Date();
+  try {
+    await sendEmail({
+      to: registration.email,
+      from: config.fromEmail,
+      subject: "Starting in 30 minutes — join the SIGNOVA webinar",
+      html: webinarReminderEmail({
+        name: registration.name,
+        token: registration.token,
+        meetUrl: config.meetUrl,
+      }),
+    });
+    await WebinarRegistration.updateOne(
+      { _id: registration._id },
+      {
+        $set: {
+          reminderStatus: "sent",
+          reminderSentAt: registration.reminderSentAt || attemptedAt,
+          lastReminderAttemptAt: attemptedAt,
+        },
+        $unset: { lastReminderError: "" },
+      }
+    );
+    return true;
+  } catch (error) {
+    await WebinarRegistration.updateOne(
+      { _id: registration._id },
+      {
+        $set: {
+          reminderStatus: registration.reminderSentAt ? "sent" : "failed",
+          lastReminderAttemptAt: attemptedAt,
+          lastReminderError: sanitizedEmailError(error),
+        },
+      }
+    );
+    return Boolean(registration.reminderSentAt);
+  }
+}
+
+export async function sendWebinarReminders(
+  now: Date = new Date()
+): Promise<{ due: boolean; sent: number; failed: number }> {
+  if (!isWebinarReminderWindow(now)) {
+    return { due: false, sent: 0, failed: 0 };
+  }
+
+  let config: ReturnType<typeof requiredEmailConfig>;
+  try {
+    config = requiredEmailConfig();
+  } catch (error) {
+    console.error("❌ Webinar reminder skipped: email is not configured", error);
+    return { due: true, sent: 0, failed: 0 };
+  }
+
+  const runStartedAt = now;
+  let sent = 0;
+  let failed = 0;
+
+  while (true) {
+    const claimed = await WebinarRegistration.findOneAndUpdate(
+      {
+        eventKey: WEBINAR_EVENT_KEY,
+        reminderStatus: { $ne: "sent" },
+        $or: [
+          { lastReminderAttemptAt: { $exists: false } },
+          { lastReminderAttemptAt: { $lt: runStartedAt } },
+        ],
+      },
+      { $set: { lastReminderAttemptAt: new Date() } },
+      { new: true }
+    );
+    if (!claimed) break;
+    const delivered = await sendReminder(claimed, config);
+    if (delivered) sent += 1;
+    else failed += 1;
+  }
+
+  return { due: true, sent, failed };
+}
+
 export async function registerForWebinar(input: unknown): Promise<{
   ok: true;
   confirmationSent: boolean;
@@ -323,7 +418,7 @@ export function createRaffleAdminSession(password: unknown): {
   }
   if (
     typeof password !== "string" ||
-    !constantTimeSecretMatch(password, env.RAFFLE_ADMIN_PASSWORD)
+    !constantTimeSecretMatch(password.trim(), env.RAFFLE_ADMIN_PASSWORD)
   ) {
     throw new AppError(401, "Invalid admin password");
   }

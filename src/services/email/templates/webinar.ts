@@ -36,6 +36,24 @@ export function webinarConfirmationEmail(input: {
   `);
 }
 
+export function webinarReminderEmail(input: {
+  name: string;
+  token: string;
+  meetUrl: string;
+}): string {
+  return webinarShell(`
+    <p style="color:#5EEBD0;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Starting in 30 minutes</p>
+    <h1 style="font-size:28px;line-height:1.15;margin:12px 0">We’re live soon, ${escapeHtml(input.name)}.</h1>
+    <p style="color:#bbb;line-height:1.65">Join <strong style="color:#fff">${escapeHtml(WEBINAR_TITLE)}</strong> now so you don’t miss the open.</p>
+    <div style="border-left:3px solid #5EEBD0;padding:4px 0 4px 16px;margin:24px 0"><strong>${escapeHtml(WEBINAR_TIME_LABEL)}</strong><br><span style="color:#999">Starts in 30 minutes · Online</span></div>
+    <a href="${escapeHtml(input.meetUrl)}" style="display:inline-block;background:#5EEBD0;color:#050505;text-decoration:none;font-weight:700;padding:13px 18px;border-radius:7px">Join Google Meet</a>
+    <div style="margin:28px 0 0;padding:16px 20px;border:1px solid #2b2b2b;border-radius:10px;background:#080909">
+      <p style="margin:0 0 6px;color:#8f9695;font-size:12px;text-transform:uppercase;letter-spacing:.12em">Your raffle token</p>
+      <strong style="color:#5EEBD0;letter-spacing:.12em">${escapeHtml(input.token)}</strong>
+    </div>
+  `);
+}
+
 export function webinarInternalNotificationEmail(input: {
   name: string;
   email: string;

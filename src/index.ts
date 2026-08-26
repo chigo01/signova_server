@@ -27,6 +27,7 @@ import { DextopusDepositSyncService } from "./services/dextopusDepositSync.servi
 import { ensureTransactionIndexes } from "./models/transaction.model";
 import { initializeStockNewsCron } from "./services/stockNewsCron.service";
 import { initializeAccountDeletionCron } from "./services/accountDeletionCron.service";
+import { initializeWebinarReminderCron } from "./services/webinarReminderCron.service";
 import { errorHandler } from "./middleware/errorHandler";
 import { ensureWebinarRegistrationIndexes } from "./models/webinarRegistration.model";
 import { ensureWebinarDrawIndexes } from "./models/webinarDraw.model";
@@ -92,6 +93,7 @@ async function startServer(): Promise<void> {
   DextopusDepositSyncService.start();
   initializeStockNewsCron();
   initializeAccountDeletionCron();
+  initializeWebinarReminderCron();
   app.listen(env.PORT, () => {
     console.log(`🚀 Server running at http://localhost:${env.PORT}`);
   });

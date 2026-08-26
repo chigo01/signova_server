@@ -11,12 +11,18 @@ import {
   createRaffleAdminSession,
   generateRaffleToken,
   isValidMeetUrl,
+  isWebinarReminderWindow,
   normalizeWebinarRegistration,
   RAFFLE_TOKEN_ALPHABET,
   rankRaffleCandidates,
   selectRaffleWinners,
+  sendWebinarReminders,
+  WEBINAR_START_AT,
 } from "../services/webinar.service";
-import { webinarConfirmationEmail } from "../services/email/templates/webinar";
+import {
+  webinarConfirmationEmail,
+  webinarReminderEmail,
+} from "../services/email/templates/webinar";
 
 test("raffle tokens use the short SIG-XXXX format and unambiguous alphabet", () => {
   const indexes = [0, 1, 2, 3];
@@ -157,6 +163,43 @@ test("confirmation email contains the token and Meet link and escapes names", ()
     token: "SIG-ABCD",
     meetUrl: "https://meet.google.com/abc-defg-hij",
   });
+  assert.match(html, /SIG-ABCD/);
+  assert.match(html, /https:\/\/meet\.google\.com\/abc-defg-hij/);
+  assert.equal(html.includes("<script>alert(1)</script>"), false);
+});
+
+test("reminder window opens 30 minutes before start and closes at start", () => {
+  const start = WEBINAR_START_AT.getTime();
+  assert.equal(
+    isWebinarReminderWindow(new Date(start - 30 * 60 * 1000 - 1)),
+    false
+  );
+  assert.equal(
+    isWebinarReminderWindow(new Date(start - 30 * 60 * 1000)),
+    true
+  );
+  assert.equal(
+    isWebinarReminderWindow(new Date(start - 15 * 60 * 1000)),
+    true
+  );
+  assert.equal(isWebinarReminderWindow(new Date(start)), false);
+  assert.equal(isWebinarReminderWindow(new Date(start + 1)), false);
+});
+
+test("reminder cron is idle outside the 30-minute window", async () => {
+  const result = await sendWebinarReminders(
+    new Date(WEBINAR_START_AT.getTime() - 30 * 60 * 1000 - 1)
+  );
+  assert.deepEqual(result, { due: false, sent: 0, failed: 0 });
+});
+
+test("reminder email contains the Meet link and raffle token and escapes names", () => {
+  const html = webinarReminderEmail({
+    name: "<script>alert(1)</script>",
+    token: "SIG-ABCD",
+    meetUrl: "https://meet.google.com/abc-defg-hij",
+  });
+  assert.match(html, /Starting in 30 minutes/);
   assert.match(html, /SIG-ABCD/);
   assert.match(html, /https:\/\/meet\.google\.com\/abc-defg-hij/);
   assert.equal(html.includes("<script>alert(1)</script>"), false);

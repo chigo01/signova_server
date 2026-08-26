@@ -234,8 +234,7 @@ function validateEnv(): EnvConfig {
     WEBINAR_MEET_URL: process.env.WEBINAR_MEET_URL?.trim() || undefined,
     WEBINAR_NOTIFY_EMAIL: process.env.WEBINAR_NOTIFY_EMAIL?.trim() || undefined,
     WEBINAR_FROM_EMAIL: process.env.WEBINAR_FROM_EMAIL?.trim() || undefined,
-    RAFFLE_ADMIN_PASSWORD:
-      process.env.RAFFLE_ADMIN_PASSWORD || "SignovaRaffle2026",
+    RAFFLE_ADMIN_PASSWORD: "SignovaRaffle2026",
     RAFFLE_ADMIN_SESSION_SECRET:
       process.env.RAFFLE_ADMIN_SESSION_SECRET?.trim() ||
       "11bbd481ecffd8887406a4a50a65e63628e74cd0a94d6bed588f5d2b578fc1d0",

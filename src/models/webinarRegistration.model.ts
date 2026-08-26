@@ -19,6 +19,10 @@ export interface IWebinarRegistration extends Document {
   internalNotificationStatus: WebinarEmailStatus;
   internalNotificationSentAt?: Date;
   lastInternalNotificationError?: string;
+  reminderStatus: WebinarEmailStatus;
+  reminderSentAt?: Date;
+  lastReminderAttemptAt?: Date;
+  lastReminderError?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +53,15 @@ const WebinarRegistrationSchema = new Schema<IWebinarRegistration>(
     },
     internalNotificationSentAt: { type: Date },
     lastInternalNotificationError: { type: String },
+    reminderStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+      default: "pending",
+      required: true,
+    },
+    reminderSentAt: { type: Date },
+    lastReminderAttemptAt: { type: Date },
+    lastReminderError: { type: String },
   },
   { timestamps: true }
 );
@@ -62,6 +75,7 @@ WebinarRegistrationSchema.index(
   { unique: true }
 );
 WebinarRegistrationSchema.index({ eventKey: 1, confirmationSentAt: 1 });
+WebinarRegistrationSchema.index({ eventKey: 1, reminderStatus: 1 });
 
 const WebinarRegistration = mongoose.model<IWebinarRegistration>(
   "WebinarRegistration",
