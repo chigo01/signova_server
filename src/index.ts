@@ -15,6 +15,7 @@ import stocksRoutes from "./routes/stocks.routes";
 import paymentsRoutes from "./routes/payments.routes";
 import bachsWebhookRoutes from "./routes/bachs-webhook.routes";
 import aellaWebhookRoutes from "./routes/aella-webhook.routes";
+import revenueCatWebhookRoutes from "./routes/revenuecat-webhook.routes";
 import tvRoutes from "./routes/tv.routes";
 import analysisRoutes from "./routes/analysis.routes";
 import journalRoutes from "./routes/journal.routes";
@@ -55,6 +56,7 @@ app.use(cookieParser());
 // Webhooks need raw bytes for HMAC verification — mount before express.json()
 app.use("/payments/webhook/bachs", bachsWebhookRoutes);
 app.use("/payments/webhook/aella", aellaWebhookRoutes);
+app.use("/payments/webhook/revenuecat", revenueCatWebhookRoutes);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

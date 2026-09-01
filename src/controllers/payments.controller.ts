@@ -5,7 +5,10 @@ import Deposit from "../models/deposit.model";
 import Transaction, { ITransaction } from "../models/transaction.model";
 import User from "../models/user.model";
 import { asyncHandler } from "../middleware/asyncHandler";
-import { effectivePlan } from "../services/planEntitlement.service";
+import {
+  effectivePlan,
+  effectiveProExpiry,
+} from "../services/planEntitlement.service";
 import { AppError } from "../middleware/errorHandler";
 import {
   BachsService,
@@ -828,7 +831,8 @@ export const getFundingBalance = asyncHandler(
 
     res.status(200).json({
       plan: effectivePlan(user),
-      proPlanExpiry: user.proPlanExpiry,
+      proPlanExpiry: effectiveProExpiry(user),
+      mobileSubscription: user.mobileSubscription,
       balanceUsdMicro: user.balanceUsdMicro,
       balanceUsd: formatUsdMicro(user.balanceUsdMicro),
     });

@@ -69,6 +69,13 @@ interface EnvConfig {
   BACHS_NGN_AMOUNT?: string;
   AELLA_SECRET_KEY?: string;
   AELLA_BASE_URL: string;
+  /** RevenueCat public SDK key used by the server to read subscriber state. */
+  REVENUECAT_API_KEY?: string;
+  REVENUECAT_ENTITLEMENT_ID: string;
+  /** Exact Authorization header configured on the RevenueCat webhook. */
+  REVENUECAT_WEBHOOK_AUTHORIZATION?: string;
+  /** Optional HMAC signing secret for X-RevenueCat-Webhook-Signature. */
+  REVENUECAT_WEBHOOK_SIGNING_SECRET?: string;
   DEXTOPUS_BASE_URL: string;
   DEXTOPUS_API_KEY?: string;
   DEXTOPUS_TREASURY_RECIPIENT?: string;
@@ -270,6 +277,14 @@ function validateEnv(): EnvConfig {
     AELLA_BASE_URL: (
       process.env.AELLA_BASE_URL?.trim() || "https://api.aellaapp.com"
     ).replace(/\/$/, ""),
+    REVENUECAT_API_KEY:
+      process.env.REVENUECAT_API_KEY?.trim() || undefined,
+    REVENUECAT_ENTITLEMENT_ID:
+      process.env.REVENUECAT_ENTITLEMENT_ID?.trim() || "signova_app_pro",
+    REVENUECAT_WEBHOOK_AUTHORIZATION:
+      process.env.REVENUECAT_WEBHOOK_AUTHORIZATION?.trim() || undefined,
+    REVENUECAT_WEBHOOK_SIGNING_SECRET:
+      process.env.REVENUECAT_WEBHOOK_SIGNING_SECRET?.trim() || undefined,
     DEXTOPUS_BASE_URL:
       process.env.DEXTOPUS_BASE_URL || "https://swap-api.dextopus.com",
     DEXTOPUS_API_KEY: process.env.DEXTOPUS_API_KEY?.trim() || undefined,

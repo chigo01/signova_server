@@ -15,7 +15,10 @@ import {
 import { env } from "../config/env";
 import { COOKIE_NAME } from "../config/cookie";
 import { isValidTimeZone } from "../services/watchlist.service";
-import { effectivePlan } from "../services/planEntitlement.service";
+import {
+  effectivePlan,
+  effectiveProExpiry,
+} from "../services/planEntitlement.service";
 
 // Notification preference categories. Each maps to a set of emails the user can
 // opt out of; transactional mail (OTP, welcome) is intentionally not included.
@@ -27,6 +30,7 @@ const NOTIFICATION_PREFERENCE_KEYS = [
 type NotificationPreferenceKey = (typeof NOTIFICATION_PREFERENCE_KEYS)[number];
 
 function serializeUser(user: {
+  _id: unknown;
   email: string;
   name?: string;
   phone?: string;
@@ -42,12 +46,28 @@ function serializeUser(user: {
   };
   plan?: "free" | "pro";
   proPlanExpiry?: Date;
+  mobileSubscription?: {
+    provider: "revenuecat";
+    entitlementId: string;
+    entitlementActive: boolean;
+    productId?: string;
+    store?: string;
+    environment?: "SANDBOX" | "PRODUCTION";
+    status: "active" | "cancelled" | "billing_issue" | "expired";
+    expiresAt?: Date;
+    willRenew: boolean;
+    originalTransactionId?: string;
+    lastEventTimestampMs?: number;
+    syncedAt: Date;
+  };
   balanceUsdMicro?: number;
   deletionRequestedAt?: Date | null;
   deletionScheduledFor?: Date | null;
 }) {
   const prefs = user.notificationPreferences ?? {};
   return {
+    id: String(user._id),
+    revenueCatAppUserId: String(user._id),
     email: user.email,
     name: user.name,
     phone: user.phone,
@@ -66,7 +86,8 @@ function serializeUser(user: {
       changedAt: user.stockNewsPreferences?.changedAt,
     },
     plan: effectivePlan(user),
-    proPlanExpiry: user.proPlanExpiry,
+    proPlanExpiry: effectiveProExpiry(user),
+    mobileSubscription: user.mobileSubscription,
     balanceUsdMicro: user.balanceUsdMicro ?? 0,
     // Non-null while the account is inside its deletion grace window. Clients
     // use this to show the "scheduled for deletion — undo?" prompt on login.

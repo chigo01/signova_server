@@ -27,6 +27,20 @@ export interface IUser extends Document {
   otpExpiry?: Date;
   plan: 'free' | 'pro';
   proPlanExpiry?: Date;
+  mobileSubscription?: {
+    provider: "revenuecat";
+    entitlementId: string;
+    entitlementActive: boolean;
+    productId?: string;
+    store?: string;
+    environment?: "SANDBOX" | "PRODUCTION";
+    status: "active" | "cancelled" | "billing_issue" | "expired";
+    expiresAt?: Date;
+    willRenew: boolean;
+    originalTransactionId?: string;
+    lastEventTimestampMs?: number;
+    syncedAt: Date;
+  };
   balanceUsdMicro: number;
   // Referral / affiliate program. `balanceUsdMicro` above is the Dextopus
   // funding wallet and is intentionally kept separate from these earnings.
@@ -98,6 +112,23 @@ const UserSchema: Schema = new Schema(
     otpExpiry: { type: Date },
     plan: { type: String, enum: ['free', 'pro'], default: 'free' },
     proPlanExpiry: { type: Date },
+    mobileSubscription: {
+      provider: { type: String, enum: ["revenuecat"] },
+      entitlementId: { type: String },
+      entitlementActive: { type: Boolean, default: false },
+      productId: { type: String },
+      store: { type: String },
+      environment: { type: String, enum: ["SANDBOX", "PRODUCTION"] },
+      status: {
+        type: String,
+        enum: ["active", "cancelled", "billing_issue", "expired"],
+      },
+      expiresAt: { type: Date },
+      willRenew: { type: Boolean, default: false },
+      originalTransactionId: { type: String },
+      lastEventTimestampMs: { type: Number },
+      syncedAt: { type: Date },
+    },
     balanceUsdMicro: { type: Number, default: 0 },
     referralCode: {
       type: String,

@@ -13,10 +13,12 @@ import {
   getTransactionStatus,
 } from "../controllers/payments.controller";
 import { verifyToken } from "../middleware/auth.middleware";
+import { syncRevenueCatSubscription } from "../controllers/revenuecat.controller";
 
 const router: Router = Router();
 
 router.get("/methods", verifyToken, listPaymentMethods);
+router.post("/revenuecat/sync", verifyToken, syncRevenueCatSubscription);
 router.post("/upgrade/bachs", verifyToken, generateBachsUpgradePayment);
 router.post("/upgrade/aella", verifyToken, generateAellaUpgradePayment);
 router.get("/transactions/:id", verifyToken, getTransactionStatus);

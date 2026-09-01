@@ -40,6 +40,7 @@ export interface AuthenticatedUserSummary {
   phone?: string;
   plan: "free" | "pro";
   proPlanExpiry?: Date;
+  mobileSubscription?: IUser["mobileSubscription"];
   balanceUsdMicro: number;
   deletionRequestedAt?: Date;
   deletionScheduledFor?: Date;
@@ -53,6 +54,7 @@ function toAuthenticatedUser(user: IUser): AuthenticatedUserSummary {
     phone: user.phone,
     plan: user.plan,
     proPlanExpiry: user.proPlanExpiry,
+    mobileSubscription: user.mobileSubscription,
     balanceUsdMicro: user.balanceUsdMicro,
     deletionRequestedAt: user.deletionRequestedAt,
     deletionScheduledFor: user.deletionScheduledFor,

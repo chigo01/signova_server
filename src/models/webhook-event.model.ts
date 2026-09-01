@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface IWebhookEvent extends Document {
-  provider: "bachs" | "aella";
+  provider: "bachs" | "aella" | "revenuecat";
   eventId: string;
   type: string;
   createdAt: Date;
@@ -12,7 +12,7 @@ const WebhookEventSchema = new Schema(
   {
     provider: {
       type: String,
-      enum: ["bachs", "aella"],
+      enum: ["bachs", "aella", "revenuecat"],
       required: true,
       default: "bachs",
     },
