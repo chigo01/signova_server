@@ -37,7 +37,7 @@ import {
   PRO_PLAN_AMOUNT_USD_MICRO,
   SubscriptionService,
 } from "../services/subscription.service";
-import { PLANS, isPlanId, planNgnAmount } from "../config/plans";
+import { PLANS, isPlanId } from "../config/plans";
 import { ReferralService } from "../services/referral.service";
 import { env } from "../config/env";
 
@@ -250,7 +250,6 @@ export const generateBachsUpgradePayment = asyncHandler(
         email: user.email,
         name: customerDisplayName(user.name, user.email),
         amountUsd: plan.displayUsd,
-        amountNgn: planNgnAmount(plan),
         paymentMethod,
         reference,
         successUrl: callbackUrl,
@@ -320,7 +319,15 @@ export const generateAellaUpgradePayment = asyncHandler(
     }
 
     const plan = PLANS[planId];
-    const amountNgn = planNgnAmount(plan);
+    let amountNgn: string;
+    try {
+      amountNgn = await BachsService.resolveNgnAmount(plan.displayUsd);
+    } catch (error) {
+      throw new AppError(
+        502,
+        (error as Error).message || "Failed to quote NGN amount for Aella checkout",
+      );
+    }
 
     const expiresAt = new Date(Date.now() + PAYMENT_EXPIRY_MS);
     const transaction = await Transaction.create({
