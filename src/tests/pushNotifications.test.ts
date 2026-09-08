@@ -6,9 +6,11 @@ import cookieParser from "cookie-parser";
 import type { Request, Response } from "express";
 import PushInstallation from "../models/pushInstallation.model";
 import {
+  parseBroadcastPushPayload,
   registerPushDevice,
   unregisterPushDevice,
 } from "../controllers/push.controller";
+import { errorHandler } from "../middleware/errorHandler";
 import pushRoutes from "../routes/push.routes";
 import type {
   BatchResponse,
@@ -17,8 +19,10 @@ import type {
 } from "firebase-admin/messaging";
 import type { FirebaseError } from "firebase-admin/app";
 import {
+  buildBroadcastPushMessage,
   buildSignalPushMessage,
   deliverSignalPush,
+  sendBroadcastPush,
   sendSignalPushToUsers,
   type PushInstallationRepository,
 } from "../services/pushNotification.service";
@@ -369,4 +373,146 @@ test("push delivery exposes batch-level Firebase errors without invalidating tok
     invalidRegistrationTokens: [],
     errorCodes: ["app/invalid-credential"],
   });
+});
+
+test("a broadcast push substitutes {firstName} and uses the broadcast payload type", () => {
+  assert.deepEqual(buildBroadcastPushMessage({
+    title: "Hey {firstName}",
+    body: "Hey {firstName}, the vault has a new note.",
+    screen: "home",
+  }, "Ada"), {
+    notification: {
+      title: "Hey Ada",
+      body: "Hey Ada, the vault has a new note.",
+    },
+    data: {
+      type: "broadcast",
+      screen: "home",
+    },
+    android: {
+      priority: "high",
+      restrictedPackageName: "com.signova.signova",
+      notification: {
+        channelId: "signova_signals",
+        sound: "default",
+      },
+    },
+    apns: {
+      headers: {
+        "apns-priority": "10",
+        "apns-topic": "com.signova.signova",
+      },
+      payload: {
+        aps: {
+          sound: "default",
+        },
+      },
+    },
+  });
+});
+
+test("admin broadcast push delivers to every enabled registration when no recipients are supplied", async () => {
+  const allTargetsCalled: string[] = [];
+  const repository: PushInstallationRepository = {
+    async findEnabledRegistrationTargets() {
+      throw new Error("targeted lookup should not run for an all-user broadcast");
+    },
+    async findAllEnabledRegistrationTargets() {
+      allTargetsCalled.push("all");
+      return [
+        { registrationToken: "token-ada", userId: "user-1", firstName: "Ada" },
+        { registrationToken: "token-tobi", userId: "user-2", firstName: "Tobi" },
+      ];
+    },
+    async disableRegistrationTokens() {
+      throw new Error("no tokens should be invalidated in this test");
+    },
+  };
+  const sendEach = mock.fn(
+    async (messages: Message[]): Promise<BatchResponse> => ({
+      successCount: messages.length,
+      failureCount: 0,
+      responses: messages.map((_, index) => ({
+        success: true,
+        messageId: `message-${index}`,
+      })),
+    }),
+  );
+
+  const result = await sendBroadcastPush(
+    { title: "Market update", body: "Hey {firstName}, check the vault." },
+    {
+      repository,
+      messaging: { sendEach } as unknown as Pick<Messaging, "sendEach">,
+    },
+  );
+
+  assert.deepEqual(allTargetsCalled, ["all"]);
+  assert.deepEqual(result, {
+    targeted: 2,
+    sent: 2,
+    failed: 0,
+    invalidRegistrationTokens: [],
+    errorCodes: [],
+  });
+  assert.equal(sendEach.mock.callCount(), 1);
+  assert.deepEqual(sendEach.mock.calls[0]!.arguments[0], [
+    {
+      ...buildBroadcastPushMessage(
+        { title: "Market update", body: "Hey {firstName}, check the vault." },
+        "Ada",
+      ),
+      token: "token-ada",
+    },
+    {
+      ...buildBroadcastPushMessage(
+        { title: "Market update", body: "Hey {firstName}, check the vault." },
+        "Tobi",
+      ),
+      token: "token-tobi",
+    },
+  ]);
+});
+
+test("parseBroadcastPushPayload rejects an oversized title and accepts a targeted list", () => {
+  assert.throws(
+    () =>
+      parseBroadcastPushPayload({
+        title: "x".repeat(81),
+        body: "Hello",
+      }),
+    /title must be at most 80 characters/,
+  );
+
+  assert.deepEqual(
+    parseBroadcastPushPayload({
+      title: " Market update ",
+      body: " Hey {firstName} ",
+      emails: [" Ada@signova.app ", "ada@signova.app", "tobi@signova.app"],
+      screen: "Home",
+      dedupKey: "manual-push:job-1",
+    }),
+    {
+      title: "Market update",
+      body: "Hey {firstName}",
+      emails: ["ada@signova.app", "tobi@signova.app"],
+      screen: "home",
+      dedupKey: "manual-push:job-1",
+    },
+  );
+});
+
+test("push broadcast webhook rejects callers without the alert secret", async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/push", pushRoutes);
+  app.use(errorHandler);
+
+  const response = await supertest(app).post("/push/broadcast").send({
+    title: "Market update",
+    body: "Hey there",
+  });
+
+  assert.equal(response.status, 503);
+  assert.equal(response.body.message, "Push broadcast webhook not configured");
 });

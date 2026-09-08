@@ -4,6 +4,8 @@ import type {
   Messaging,
 } from "firebase-admin/messaging";
 import PushInstallation from "../models/pushInstallation.model";
+import User from "../models/user.model";
+import { deriveFirstName } from "./email/templates/_shared";
 import { getFirebaseMessaging } from "./firebaseAdmin.service";
 import {
   buildSignalAlertPushBody,
@@ -80,10 +82,13 @@ export type PushTarget = PushRecipient & {
   registrationToken: string;
 };
 
+export type PushMessageBuilder = (target: PushTarget) => BaseMessage;
+
 export interface PushInstallationRepository {
   findEnabledRegistrationTargets(
     recipients: PushRecipient[],
   ): Promise<PushTarget[]>;
+  findAllEnabledRegistrationTargets?(): Promise<PushTarget[]>;
   disableRegistrationTokens(registrationTokens: string[]): Promise<void>;
 }
 
@@ -100,6 +105,35 @@ const mongoosePushInstallationRepository: PushInstallationRepository = {
     })
       .select("installationId userId")
       .lean();
+    return installations.map((installation) => ({
+      registrationToken: installation.installationId,
+      userId: String(installation.userId),
+      firstName: firstNameByUserId.get(String(installation.userId)) ?? "there",
+    }));
+  },
+
+  async findAllEnabledRegistrationTargets() {
+    const installations = await PushInstallation.find({
+      registrationType: "fcm_token",
+      enabled: true,
+    })
+      .select("installationId userId")
+      .lean();
+    if (installations.length === 0) return [];
+
+    const userIds = [
+      ...new Set(installations.map((installation) => String(installation.userId))),
+    ];
+    const users = await User.find({ _id: { $in: userIds } })
+      .select("_id name")
+      .lean();
+    const firstNameByUserId = new Map(
+      users.map((user) => [
+        String(user._id),
+        deriveFirstName((user as { name?: string | null }).name),
+      ]),
+    );
+
     return installations.map((installation) => ({
       registrationToken: installation.installationId,
       userId: String(installation.userId),
@@ -131,9 +165,9 @@ function firebaseErrorCode(error: unknown): string {
   return "messaging/unknown-error";
 }
 
-export async function deliverSignalPush(
+export async function deliverPush(
   targets: PushTarget[],
-  payload: SignalPushPayload,
+  buildMessage: PushMessageBuilder,
   messaging: Pick<Messaging, "sendEach">,
 ): Promise<PushDeliveryResult> {
   const uniqueTargets = [
@@ -161,7 +195,7 @@ export async function deliverSignalPush(
       offset + FCM_MULTICAST_LIMIT,
     );
     const messages: Message[] = batchTargets.map((target) => ({
-      ...buildSignalPushMessage(payload, target.firstName),
+      ...buildMessage(target),
       token: target.registrationToken,
     }));
 
@@ -194,6 +228,64 @@ export async function deliverSignalPush(
 
   result.errorCodes = [...new Set(result.errorCodes)];
   return result;
+}
+
+export async function deliverSignalPush(
+  targets: PushTarget[],
+  payload: SignalPushPayload,
+  messaging: Pick<Messaging, "sendEach">,
+): Promise<PushDeliveryResult> {
+  return deliverPush(
+    targets,
+    (target) => buildSignalPushMessage(payload, target.firstName),
+    messaging,
+  );
+}
+
+export type BroadcastPushPayload = {
+  title: string;
+  body: string;
+  screen?: string;
+};
+
+export function applyPushTemplate(template: string, firstName: string): string {
+  return template.split("{firstName}").join(firstName);
+}
+
+export function buildBroadcastPushMessage(
+  payload: BroadcastPushPayload,
+  firstName = "there",
+): BaseMessage {
+  const notification = {
+    title: applyPushTemplate(payload.title, firstName),
+    body: applyPushTemplate(payload.body, firstName),
+  };
+  return {
+    notification,
+    data: {
+      type: "broadcast",
+      screen: payload.screen ?? "home",
+    },
+    android: {
+      priority: "high",
+      restrictedPackageName: MOBILE_APPLICATION_ID,
+      notification: {
+        channelId: SIGNALS_CHANNEL_ID,
+        sound: "default",
+      },
+    },
+    apns: {
+      headers: {
+        "apns-priority": "10",
+        "apns-topic": MOBILE_APPLICATION_ID,
+      },
+      payload: {
+        aps: {
+          sound: "default",
+        },
+      },
+    },
+  };
 }
 
 export async function sendSignalPushToUsers(
@@ -250,6 +342,79 @@ export async function sendSignalPushToUsers(
   }
 
   const result = await deliverSignalPush(targets, payload, messaging);
+
+  if (result.invalidRegistrationTokens.length > 0) {
+    await repository.disableRegistrationTokens(
+      result.invalidRegistrationTokens,
+    );
+  }
+
+  return result;
+}
+
+export async function sendBroadcastPush(
+  payload: BroadcastPushPayload,
+  overrides: {
+    recipients?: PushRecipient[];
+    repository?: PushInstallationRepository;
+    messaging?: Pick<Messaging, "sendEach">;
+  } = {},
+): Promise<PushDeliveryResult> {
+  const repository =
+    overrides.repository ?? mongoosePushInstallationRepository;
+
+  let targets: PushTarget[];
+  if (overrides.recipients) {
+    if (overrides.recipients.length === 0) {
+      return {
+        targeted: 0,
+        sent: 0,
+        failed: 0,
+        invalidRegistrationTokens: [],
+        errorCodes: [],
+      };
+    }
+    const uniqueRecipients = [
+      ...new Map(
+        overrides.recipients.map((recipient) => [recipient.userId, recipient]),
+      ).values(),
+    ];
+    targets = await repository.findEnabledRegistrationTargets(uniqueRecipients);
+  } else if (repository.findAllEnabledRegistrationTargets) {
+    targets = await repository.findAllEnabledRegistrationTargets();
+  } else {
+    targets = [];
+  }
+
+  let messaging: Pick<Messaging, "sendEach"> | null;
+  try {
+    messaging = overrides.messaging ?? getFirebaseMessaging();
+  } catch (error) {
+    console.error("[push] Firebase initialization failed:", error);
+    return {
+      targeted: targets.length,
+      sent: 0,
+      failed: targets.length,
+      invalidRegistrationTokens: [],
+      errorCodes: [firebaseErrorCode(error)],
+    };
+  }
+
+  if (!messaging) {
+    return {
+      targeted: 0,
+      sent: 0,
+      failed: 0,
+      invalidRegistrationTokens: [],
+      errorCodes: [],
+    };
+  }
+
+  const result = await deliverPush(
+    targets,
+    (target) => buildBroadcastPushMessage(payload, target.firstName),
+    messaging,
+  );
 
   if (result.invalidRegistrationTokens.length > 0) {
     await repository.disableRegistrationTokens(
