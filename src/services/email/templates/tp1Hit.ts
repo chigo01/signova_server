@@ -44,7 +44,7 @@ export const tp1HitEmail = (
     <p style="margin:0 0 16px;">
       If you took profit on this one, share it. Drop a screenshot in the community. Your result is
       proof of what the signal looked like in real life &mdash; and it might be exactly what
-      another trader in the beta needed to see today.
+      another trader needed to see today.
     </p>
 
     <p style="margin:0 0 24px;">

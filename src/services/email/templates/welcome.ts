@@ -26,7 +26,7 @@ export const welcomeEmail = (
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <meta name="supported-color-schemes" content="light dark" />
-    <title>Welcome to the Signova Beta</title>
+    <title>Welcome to Signova</title>
     <style>
       :root { color-scheme: light dark; supported-color-schemes: light dark; }
       body, table, td {
@@ -103,13 +103,13 @@ export const welcomeEmail = (
 
             <tr>
               <td align="center" style="padding:0 0 24px;">
-                <h1 class="dark-text" style="margin:0;font-size:44px;line-height:1.1;font-weight:800;color:#ffffff;text-align:center;">Welcome to the<br/>Signova Beta</h1>
+                <h1 class="dark-text" style="margin:0;font-size:44px;line-height:1.1;font-weight:800;color:#ffffff;text-align:center;">Welcome to<br/>Signova</h1>
               </td>
             </tr>
 
             <tr>
               <td class="dark-muted" align="center" style="padding:8px 24px 32px;font-size:15px;line-height:1.6;color:#9ca3af;text-align:center;">
-                Hey <strong class="dark-text" style="color:#ffffff;">${firstName}</strong>, You made the list. Signova's beta is live and you're one of the few traders getting early access before we open the doors wide. Here's what's live and ready for you right now:
+                Hey <strong class="dark-text" style="color:#ffffff;">${firstName}</strong>, welcome to Signova. Here's what's live and ready for you right now:
               </td>
             </tr>
 
@@ -158,7 +158,7 @@ export const welcomeEmail = (
 
             <tr>
               <td class="dark-muted" align="center" style="padding:0 24px 32px;font-size:15px;line-height:1.6;color:#9ca3af;text-align:center;">
-                You're here early. Your feedback directly shapes what we build next. The inner circle moves on WhatsApp and Telegram &mdash; that's where we post real-time updates, signal discussions, and early announcements.
+                Your feedback helps us keep getting better. The community lives on WhatsApp and Telegram &mdash; that's where we post real-time updates, signal discussions, and announcements.
               </td>
             </tr>
 
@@ -198,7 +198,7 @@ export const welcomeEmail = (
 </html>`;
 
   return {
-    subject: "You're in! Welcome to the Signova Beta",
+    subject: "Welcome to Signova",
     html,
   };
 };
