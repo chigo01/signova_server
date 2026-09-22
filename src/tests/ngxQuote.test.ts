@@ -5,6 +5,7 @@ import {
   fallbackNgxBoard,
   quotesFromScannerRows,
 } from "../services/ngxQuote.service";
+import { KRX_SPEC, quotesFromBoardRows } from "../services/boardQuote.service";
 
 test("NGX catalog recognizes the curated board and rejects US tickers", () => {
   assert.equal(isNgxSymbol("dangcem"), true);
@@ -69,6 +70,35 @@ test("scanner rows become naira quotes in catalog order", () => {
   const aradel = listed.find((item) => item.symbol === "ARADEL");
   assert.equal(aradel?.changePercent, -1.2903225806451613);
   assert.equal(listed.some((item) => item.symbol === "AAPL"), false);
+});
+
+test("Korean scanner rows stay in won and catalog order", () => {
+  const listed = quotesFromBoardRows(KRX_SPEC, {
+    data: [
+      {
+        s: "KRX:005930",
+        d: [
+          "005930",
+          "Samsung Electronics Co., Ltd.",
+          276500,
+          1.2,
+          3300,
+          278000,
+          270000,
+          1740782914062500,
+          "Electronic Technology",
+        ],
+      },
+    ],
+  });
+
+  assert.equal(listed.length, 30);
+  assert.equal(listed[0]?.symbol, "005930");
+  assert.equal(listed[0]?.price, 276500);
+  assert.equal(listed[0]?.currency, "KRW");
+  assert.equal(listed[0]?.market, "KRX");
+  assert.equal(listed[1]?.symbol, "000660");
+  assert.equal(listed[1]?.price, 0);
 });
 
 test("fallback board keeps every curated name without a price", () => {

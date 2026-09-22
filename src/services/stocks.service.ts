@@ -7,7 +7,7 @@ import StocksCache from "../models/stocksCache.model";
 import { env } from "../config/env";
 import { STOCKS_CONSTANTS } from "../config/constants";
 import { PredictionService } from "./prediction.service";
-import { NgxQuoteService, type NgxListing } from "./ngxQuote.service";
+import { BoardQuoteService, type BoardListing } from "./boardQuote.service";
 
 export interface StockRecommendation {
   symbol: string;
@@ -79,12 +79,14 @@ export class StocksService {
   static async getRecommendations(): Promise<{
     watchlist: StockRecommendation[];
     topMovers: StockRecommendation[];
-    ngx: NgxListing[];
+    ngx: BoardListing[];
+    krx: BoardListing[];
     lastUpdated: string;
   }> {
-    // Nigerian board is independent of the US Finnhub/GPT pass. A feed failure
+    // Local boards are independent of the US Finnhub/GPT pass. A feed failure
     // still returns the curated names so charts can open.
-    const ngxPromise = NgxQuoteService.getBoard();
+    const ngxPromise = BoardQuoteService.getBoard("NGX");
+    const krxPromise = BoardQuoteService.getBoard("KRX");
 
     // Step 1: Fetch top movers from Alpha Vantage (1 call/day, cached 24h)
     let moverSymbols: { symbol: string; isGainer: boolean }[] = [];
@@ -198,12 +200,13 @@ export class StocksService {
       .filter((r) => !r.isWatchlist && moverSymbolSet.has(r.rec.symbol))
       .map((r) => r.rec);
 
-    const ngx = await ngxPromise;
+    const [ngx, krx] = await Promise.all([ngxPromise, krxPromise]);
 
     return {
       watchlist: watchlistRecs,
       topMovers: topMoverRecs,
       ngx,
+      krx,
       lastUpdated: new Date().toISOString(),
     };
   }

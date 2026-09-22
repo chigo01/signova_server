@@ -28,6 +28,7 @@ import {
 test("watchlist normalizes symbols and rejects malformed values", () => {
   assert.equal(normalizeStockSymbol(" meta "), "META");
   assert.equal(normalizeStockSymbol("firstholdco"), "FIRSTHOLDCO");
+  assert.equal(normalizeStockSymbol("005930"), "005930");
   assert.throws(() => normalizeStockSymbol("meta stock"), /Invalid stock symbol/);
   assert.throws(() => normalizeStockSymbol(""), /Invalid stock symbol/);
   assert.throws(() => normalizeStockSymbol("A".repeat(16)), /Invalid stock symbol/);

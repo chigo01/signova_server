@@ -13,16 +13,17 @@ import {
   type StockNewsAvailability,
 } from "./stockNewsReadiness.service";
 import { isNgxSymbol, ngxCompanyName } from "../config/ngxBoard";
+import { isKrxSymbol, krxCompanyName } from "../config/krxBoard";
 
 export const FREE_WATCHLIST_LIMIT = 3;
-// FIRSTHOLDCO is 11 characters. Keep headroom for other NGX tickers.
-export const STOCK_SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,14}$/;
+// FIRSTHOLDCO is 11 characters. Korean codes are six digits, so a leading digit is allowed.
+export const STOCK_SYMBOL_RE = /^[A-Z0-9][A-Z0-9.-]{0,14}$/;
 
 export type StockNewsDeliveryMode = "off" | "immediate" | "daily";
 
 export interface SerializedWatchlistItem {
   symbol: string;
-  market: "US" | "NGX";
+  market: "US" | "NGX" | "KRX";
   companyName?: string;
   status: WatchlistAlertStatus;
   alertsActiveSince: string;
@@ -87,7 +88,11 @@ export function isValidTimeZone(value: string): boolean {
 function serialize(entry: IUserWatchlist): SerializedWatchlistItem {
   return {
     symbol: entry.symbol,
-    market: isNgxSymbol(entry.symbol) ? "NGX" : "US",
+    market: isNgxSymbol(entry.symbol)
+      ? "NGX"
+      : isKrxSymbol(entry.symbol)
+        ? "KRX"
+        : "US",
     companyName: entry.companyName,
     status: entry.status,
     alertsActiveSince: entry.alertsActiveSince.toISOString(),
@@ -198,6 +203,8 @@ export class WatchlistService {
     let companyName: string;
     if (isNgxSymbol(symbol)) {
       companyName = ngxCompanyName(symbol);
+    } else if (isKrxSymbol(symbol)) {
+      companyName = krxCompanyName(symbol);
     } else {
       const profile = await FinnhubService.fetchProfile(symbol);
       if (!profile?.name?.trim()) throw new Error("Stock symbol was not found");

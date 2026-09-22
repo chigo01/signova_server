@@ -8,7 +8,8 @@ import {
   WatchlistService,
 } from "../services/watchlist.service";
 import { isNgxSymbol } from "../config/ngxBoard";
-import { NgxQuoteService } from "../services/ngxQuote.service";
+import { isKrxSymbol } from "../config/krxBoard";
+import { BoardQuoteService, type ListedMarket } from "../services/boardQuote.service";
 
 export const getRecommendations = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -25,9 +26,10 @@ export const getTopNews = asyncHandler(
 );
 
 export const getNgxQuote = asyncHandler(async (req: Request, res: Response) => {
-  if (String(req.query.market ?? "").toLowerCase() !== "ngx") {
-    throw new AppError(404, "Quote not available");
-  }
+  const requested = String(req.query.market ?? "").toLowerCase();
+  const market: ListedMarket | null =
+    requested === "ngx" ? "NGX" : requested === "krx" ? "KRX" : null;
+  if (!market) throw new AppError(404, "Quote not available");
   const raw = Array.isArray(req.params.symbol)
     ? req.params.symbol[0]
     : req.params.symbol;
@@ -40,8 +42,10 @@ export const getNgxQuote = asyncHandler(async (req: Request, res: Response) => {
       error instanceof Error ? error.message : "Invalid stock symbol",
     );
   }
-  if (!isNgxSymbol(symbol)) throw new AppError(404, "Stock symbol was not found");
-  const quote = await NgxQuoteService.getQuote(symbol);
+  const known =
+    market === "NGX" ? isNgxSymbol(symbol) : isKrxSymbol(symbol);
+  if (!known) throw new AppError(404, "Stock symbol was not found");
+  const quote = await BoardQuoteService.getQuote(market, symbol);
   if (!quote) throw new AppError(404, "Quote not available");
   res.status(200).json(quote);
 });
