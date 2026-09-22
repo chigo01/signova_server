@@ -57,6 +57,7 @@ export interface IUser extends Document {
   // at most one SIGcoin — the first time this user pays for a subscription.
   subscribedReferralCredited?: boolean;
   welcomedAt?: Date | null;
+  lastLoginAt?: Date;
   // Account deletion (Google Play / App Store 5.1.1(v)). The account stays
   // fully usable during the grace window; only the purge job destroys data.
   deletionRequestedAt?: Date;
@@ -143,6 +144,7 @@ const UserSchema: Schema = new Schema(
     sigcoinRateUsd: { type: Number, default: SIGCOIN_RATE_USD_DEFAULT },
     subscribedReferralCredited: { type: Boolean, default: false },
     welcomedAt: { type: Date, default: null },
+    lastLoginAt: { type: Date },
     deletionRequestedAt: { type: Date },
     deletionScheduledFor: { type: Date },
     deletionReason: {
@@ -161,5 +163,6 @@ const UserSchema: Schema = new Schema(
 // Drives the purge job's due query. Sparse because the overwhelming majority of
 // users never request deletion.
 UserSchema.index({ deletionScheduledFor: 1 }, { sparse: true });
+UserSchema.index({ lastLoginAt: -1 });
 
 export default mongoose.model<IUser>("User", UserSchema);

@@ -12,14 +12,17 @@ import {
   configuredStockNewsAvailability,
   type StockNewsAvailability,
 } from "./stockNewsReadiness.service";
+import { isNgxSymbol, ngxCompanyName } from "../config/ngxBoard";
 
 export const FREE_WATCHLIST_LIMIT = 3;
-export const STOCK_SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;
+// FIRSTHOLDCO is 11 characters. Keep headroom for other NGX tickers.
+export const STOCK_SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,14}$/;
 
 export type StockNewsDeliveryMode = "off" | "immediate" | "daily";
 
 export interface SerializedWatchlistItem {
   symbol: string;
+  market: "US" | "NGX";
   companyName?: string;
   status: WatchlistAlertStatus;
   alertsActiveSince: string;
@@ -84,6 +87,7 @@ export function isValidTimeZone(value: string): boolean {
 function serialize(entry: IUserWatchlist): SerializedWatchlistItem {
   return {
     symbol: entry.symbol,
+    market: isNgxSymbol(entry.symbol) ? "NGX" : "US",
     companyName: entry.companyName,
     status: entry.status,
     alertsActiveSince: entry.alertsActiveSince.toISOString(),
@@ -191,8 +195,14 @@ export class WatchlistService {
       );
     }
 
-    const profile = await FinnhubService.fetchProfile(symbol);
-    if (!profile?.name?.trim()) throw new Error("Stock symbol was not found");
+    let companyName: string;
+    if (isNgxSymbol(symbol)) {
+      companyName = ngxCompanyName(symbol);
+    } else {
+      const profile = await FinnhubService.fetchProfile(symbol);
+      if (!profile?.name?.trim()) throw new Error("Stock symbol was not found");
+      companyName = profile.name.trim();
+    }
 
     const now = new Date();
     let entry: IUserWatchlist;
@@ -200,7 +210,7 @@ export class WatchlistService {
       entry = await UserWatchlist.create({
         userId,
         symbol,
-        companyName: profile.name.trim(),
+        companyName,
         status: "active",
         alertsActiveSince: now,
         addedAt: now,

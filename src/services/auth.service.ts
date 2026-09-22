@@ -44,6 +44,7 @@ export interface AuthenticatedUserSummary {
   balanceUsdMicro: number;
   deletionRequestedAt?: Date;
   deletionScheduledFor?: Date;
+  lastLoginAt?: Date;
 }
 
 function toAuthenticatedUser(user: IUser): AuthenticatedUserSummary {
@@ -58,6 +59,7 @@ function toAuthenticatedUser(user: IUser): AuthenticatedUserSummary {
     balanceUsdMicro: user.balanceUsdMicro,
     deletionRequestedAt: user.deletionRequestedAt,
     deletionScheduledFor: user.deletionScheduledFor,
+    lastLoginAt: user.lastLoginAt,
   };
 }
 
@@ -194,8 +196,9 @@ export class AuthService {
       } else {
         user.otp = undefined;
         user.otpExpiry = undefined;
-        await user.save();
       }
+      user.lastLoginAt = new Date();
+      await user.save();
 
       await this.maybeSendWelcomeEmail(user);
 
@@ -215,6 +218,7 @@ export class AuthService {
 
     user.otp = undefined;
     user.otpExpiry = undefined;
+    user.lastLoginAt = new Date();
     await user.save();
 
     await this.maybeSendWelcomeEmail(user);
@@ -411,6 +415,9 @@ export class AuthService {
       await ReferralService.attachReferrer(user, referralCode);
     }
 
+    user.lastLoginAt = new Date();
+    await user.save();
+
     await this.maybeSendWelcomeEmail(user);
 
     return toAuthenticatedUser(user);
@@ -472,6 +479,9 @@ export class AuthService {
       }).save();
       await ReferralService.attachReferrer(user, referralCode);
     }
+
+    user.lastLoginAt = new Date();
+    await user.save();
 
     await this.maybeSendWelcomeEmail(user);
     return toAuthenticatedUser(user);

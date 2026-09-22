@@ -9,6 +9,7 @@ import {
   getPayouts,
   getLeaderboard,
   getStats,
+  getSalesStats,
   getPaymentSettings,
   updatePaymentSettings,
 } from "../controllers/admin.controller";
@@ -19,6 +20,7 @@ const router: Router = Router();
 router.use(verifyToken, requireAdmin);
 
 router.get("/stats", getStats);
+router.get("/sales/stats", getSalesStats);
 router.get("/payment-settings", getPaymentSettings);
 router.patch("/payment-settings", updatePaymentSettings);
 router.get("/leaderboard", getLeaderboard);

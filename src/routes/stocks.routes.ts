@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   addPersonalWatchlistStock,
   getPersonalWatchlist,
+  getNgxQuote,
   getRecommendations,
   getTopNews,
   removePersonalWatchlistStock,
@@ -17,6 +18,7 @@ const router: Router = Router();
 // stock *detail* payoff is still gated client-side in the webapp.
 router.get("/recommendations", getRecommendations);
 router.get("/news", getTopNews);
+router.get("/quote/:symbol", getNgxQuote);
 router.get("/watchlist", verifyToken, getPersonalWatchlist);
 router.post(
   "/watchlist",

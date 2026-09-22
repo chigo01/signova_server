@@ -11,10 +11,29 @@ function adminEmail(req: Request): string {
 
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
+  const paidStatus = typeof req.query.paidStatus === "string" ? req.query.paidStatus : undefined;
+  const activity = typeof req.query.activity === "string" ? req.query.activity : undefined;
+  const hasReferrals = typeof req.query.hasReferrals === "string" ? req.query.hasReferrals : undefined;
+  const sortBy = typeof req.query.sortBy === "string" ? req.query.sortBy : undefined;
+  const sortDir = typeof req.query.sortDir === "string" ? req.query.sortDir : undefined;
   const page = req.query.page ? Number(req.query.page) : undefined;
   const limit = req.query.limit ? Number(req.query.limit) : undefined;
-  const result = await AdminService.listUsers({ search, page, limit });
+  const result = await AdminService.listUsers({
+    search,
+    paidStatus,
+    activity,
+    hasReferrals,
+    sortBy,
+    sortDir,
+    page,
+    limit,
+  });
   res.status(200).json(result);
+});
+
+export const getSalesStats = asyncHandler(async (_req: Request, res: Response) => {
+  const stats = await AdminService.getSalesStats();
+  res.status(200).json(stats);
 });
 
 export const getUser = asyncHandler(async (req: Request, res: Response) => {

@@ -10,6 +10,7 @@ import StockNewsRun from "../models/stockNewsRun.model";
 import User from "../models/user.model";
 import { FinnhubNewsService, NewsArticle } from "./news.service";
 import { WatchlistService } from "./watchlist.service";
+import { isNgxSymbol } from "../config/ngxBoard";
 import { deriveFirstName } from "./email/templates/_shared";
 import {
   StockNewsEmailArticle,
@@ -258,6 +259,8 @@ export class StockNewsAlertService {
       const earliestBySymbol = new Map<string, Date>();
       for (const recipient of recipients) {
         for (const entry of recipient.entries) {
+          // Finnhub company news does not cover the Nigerian Exchange.
+          if (isNgxSymbol(entry.symbol)) continue;
           const cutoff = alertCutoff(entry, recipient, now);
           const current = earliestBySymbol.get(entry.symbol);
           if (!current || cutoff < current) earliestBySymbol.set(entry.symbol, cutoff);

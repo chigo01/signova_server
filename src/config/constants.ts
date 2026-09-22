@@ -82,6 +82,7 @@ export const PAGINATION_CONSTANTS = {
 } as const;
 
 export const STOCKS_CONSTANTS = {
+  // US listings only. Nigerian Exchange names live in src/config/ngxBoard.ts.
   WATCHLIST: [
     "AAPL","MSFT","NVDA","TSLA","META","AMZN","GOOGL","NFLX",
     "AMD","AVGO","TSM","ARM","MU","SMCI","QCOM","INTC",

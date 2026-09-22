@@ -27,8 +27,10 @@ import {
 
 test("watchlist normalizes symbols and rejects malformed values", () => {
   assert.equal(normalizeStockSymbol(" meta "), "META");
+  assert.equal(normalizeStockSymbol("firstholdco"), "FIRSTHOLDCO");
   assert.throws(() => normalizeStockSymbol("meta stock"), /Invalid stock symbol/);
   assert.throws(() => normalizeStockSymbol(""), /Invalid stock symbol/);
+  assert.throws(() => normalizeStockSymbol("A".repeat(16)), /Invalid stock symbol/);
 });
 
 test("effective Pro requires both plan and a future expiry", () => {

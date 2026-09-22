@@ -3,9 +3,12 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { StocksService } from "../services/stocks.service";
 import { AppError } from "../middleware/errorHandler";
 import {
+  normalizeStockSymbol,
   WatchlistLimitError,
   WatchlistService,
 } from "../services/watchlist.service";
+import { isNgxSymbol } from "../config/ngxBoard";
+import { NgxQuoteService } from "../services/ngxQuote.service";
 
 export const getRecommendations = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -20,6 +23,28 @@ export const getTopNews = asyncHandler(
     res.status(200).json(data);
   }
 );
+
+export const getNgxQuote = asyncHandler(async (req: Request, res: Response) => {
+  if (String(req.query.market ?? "").toLowerCase() !== "ngx") {
+    throw new AppError(404, "Quote not available");
+  }
+  const raw = Array.isArray(req.params.symbol)
+    ? req.params.symbol[0]
+    : req.params.symbol;
+  let symbol: string;
+  try {
+    symbol = normalizeStockSymbol(raw);
+  } catch (error) {
+    throw new AppError(
+      400,
+      error instanceof Error ? error.message : "Invalid stock symbol",
+    );
+  }
+  if (!isNgxSymbol(symbol)) throw new AppError(404, "Stock symbol was not found");
+  const quote = await NgxQuoteService.getQuote(symbol);
+  if (!quote) throw new AppError(404, "Quote not available");
+  res.status(200).json(quote);
+});
 
 function authenticatedUserId(req: Request): string {
   if (!req.user?.userId) throw new AppError(401, "Unauthorized");
